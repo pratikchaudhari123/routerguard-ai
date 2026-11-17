@@ -30,6 +30,15 @@ td,th{text-align:left;padding:10px;border-bottom:1px solid #263a55;font-size:13p
 <div class="card"><div class="row"><h2>Live RSSI signal</h2><small id="source">Reading local Wi-Fi diagnostics</small></div>
 <canvas id="chart" width="1100" height="270"></canvas><small>Lower (more negative) values mean weaker received signal.</small></div>
 
+
+<div class="card"><div class="row"><h2>CSI motion receiver</h2><span class="status" id="csiConnection">Receiver not connected</span></div>
+<div class="grid" style="margin-bottom:0">
+<div><div class="label">Motion status</div><div class="value" id="csiMotion" style="font-size:20px">Waiting for CSI</div></div>
+<div><div class="label">Signal change score</div><div class="value" id="csiScore" style="font-size:20px">—</div></div>
+<div><div class="label">CSI subcarriers</div><div class="value" id="csiSubs" style="font-size:20px">—</div></div>
+<div><div class="label">Calibration</div><div class="value" id="csiCal" style="font-size:20px">Not started</div></div>
+</div><small id="csiSeen">Connect a compatible CSI receiver to begin.</small>
+<p class="note">This panel reports CSI receiver data only. RSSI from the Mac is not a substitute for CSI. A movement score is experimental and does not identify an object or locate it precisely.</p></div>
 <div class="card"><div class="row"><h2>Wi-Fi coverage field · live visualisation</h2><span class="status" id="fieldState">Waiting for valid signal</span></div>
 <p class="note">Animated coverage illustration. The circles represent an approximate radio field, not a measured floor plan or a detected person's exact location.</p>
 <canvas id="field" width="1100" height="420" style="height:420px"></canvas>
@@ -96,6 +105,17 @@ function draw(values){
  ctx.strokeStyle='#56a9ff';ctx.lineWidth=3;ctx.beginPath();
  values.forEach((v,i)=>{let x=45+i*(w-60)/Math.max(1,values.length-1),y=20+(max-v)*(h-40)/(max-min);if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.stroke();
 }
+async function refreshCSI(){
+ try{
+  const d=await(await fetch('/api/csi/status')).json();
+  el('csiConnection').textContent=d.receiver_connected?'CSI receiver connected':'Receiver not connected';
+  el('csiMotion').textContent=d.motion||'Waiting for CSI';
+  el('csiScore').textContent=d.motion_score===null?'—':d.motion_score;
+  el('csiSubs').textContent=d.subcarriers||'—';
+  el('csiCal').textContent=d.calibrated?'Baseline ready':'Collecting baseline';
+  el('csiSeen').textContent=d.last_seen?'Last CSI packet: '+new Date(d.last_seen).toLocaleTimeString():'No CSI packets received yet.';
+ }catch(e){console.error(e)}
+}
 async function refresh(){
  try{
  const s=await(await fetch('/api/status')).json();
@@ -113,5 +133,5 @@ async function refresh(){
  }catch(e){console.error(e)}
 }
 async function sampleNow(){await fetch('/api/sample',{method:'POST'});refresh()}
-refresh();setInterval(refresh,2000);
+refresh();refreshCSI();setInterval(refresh,2000);setInterval(refreshCSI,1000);
 </script></body></html>
