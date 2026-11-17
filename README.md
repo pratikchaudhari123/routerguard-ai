@@ -131,3 +131,37 @@ The dashboard includes a quick exploratory test at **Quick signal-change test (M
 This test compares the RSSI measured at the MacBook with an empty-area baseline. It can show whether a movement coincides with a change at that receiver. It is **not device-free object detection across the entire Wi-Fi coverage area**, does not identify humans versus objects, and cannot estimate position. Small RSSI changes may be missed; unrelated interference or router/client behavior may trigger changes. The threshold is an initial experiment setting, not a validated detection threshold.
 
 For coverage-area sensing, continue with compatible CSI receiver hardware and multiple spatially separated sensing links. The CSI endpoint remains an integration scaffold until real receiver firmware sends correctly parsed CSI amplitudes.
+
+
+## Multi-receiver CSI area-estimation scaffold
+
+The dashboard now includes a **Multi-receiver area estimation** panel and these endpoints:
+
+- `PUT /api/localization/nodes` — register a CSI receiver with a stable ID, its measured room-map coordinates (0–100), and a zone label.
+- `GET /api/localization/nodes` — list registered receivers.
+- `POST /api/localization/calibrate` — clear per-receiver history and begin an empty-room baseline.
+- `POST /api/localization/csi` — ingest CSI amplitude vectors from each registered receiver.
+- `GET /api/localization/status` — receiver status, activity flags, active zones, and an experimental candidate centroid.
+- `POST /api/localization/stop` — stop the calibration state.
+
+Each receiver must send at least 30 baseline packets while the monitored area is empty. After that, the scaffold compares the incoming CSI amplitude mean/spread with that receiver's baseline. When at least two receivers report a fresh change at the same time, the dashboard displays a weighted centroid of their installed coordinates.
+
+**Important:** this is an experimental visualization scaffold, not validated triangulation or exact person tracking. The weighted centroid is not a physically derived location estimate; it can be wrong when receiver coverage overlaps unevenly, when reflections dominate, or when multiple people move. The MacBook RSSI collector does not feed this map. Real CSI-capable receiver firmware and labelled multi-zone tests are required before interpreting results as human location.
+
+Example receiver registration:
+
+```bash
+curl -X PUT http://127.0.0.1:8002/api/localization/nodes \
+  -H 'Content-Type: application/json' \
+  -d '{"node_id":"esp32-csi-01","x":15,"y":20,"zone":"North-West"}'
+```
+
+Example CSI packet (send from receiver firmware or a test harness):
+
+```bash
+curl -X POST http://127.0.0.1:8002/api/localization/csi \
+  -H 'Content-Type: application/json' \
+  -d '{"node_id":"esp32-csi-01","amplitudes":[12.1,13.4,11.8,14.0,12.7,13.1,11.9,12.8]}'
+```
+
+Register at least two receivers at different physical positions, calibrate with the room empty, and have both send packets continuously. Do not send synthetic or copied vectors and interpret them as real detections.
