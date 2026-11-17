@@ -2,6 +2,8 @@ import asyncio
 import platform
 import re
 import sqlite3
+import json
+import statistics
 import subprocess
 from collections import deque
 from contextlib import asynccontextmanager
@@ -9,7 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -24,6 +27,8 @@ state = {"connected": False, "ssid": None, "interface": None, "rssi": None,
          "variation_db": None, "activity": "Waiting for signal samples",
          "activity_level": "neutral", "source": None, "history": []}
 samples = deque(maxlen=90)
+csi_windows = {}
+csi_state = {"receiver_connected": False, "device_id": None, "last_seen": None, "subcarriers": 0, "motion_score": None, "motion": "Waiting for CSI receiver", "calibrated": False}
 
 def run_cmd(args, timeout=4):
     try:
@@ -140,6 +145,10 @@ def init_db():
         for column, kind in migrations.items():
             if column not in existing:
                 c.execute(f"ALTER TABLE samples ADD COLUMN {column} {kind}")
+        c.execute("""CREATE TABLE IF NOT EXISTS csi_samples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL,
+            device_id TEXT NOT NULL, rssi INTEGER, amplitudes_json TEXT NOT NULL,
+            motion_score REAL NOT NULL, motion TEXT NOT NULL, zone TEXT)""")
 
 def take_sample():
     reading = read_wifi()
@@ -200,6 +209,54 @@ app.mount("/static", StaticFiles(directory="frontend"), name="static")
 @app.get("/", response_class=HTMLResponse)
 def home():
     return Path("frontend/index.html").read_text()
+
+
+class CSIPacket(BaseModel):
+    device_id: str = Field(min_length=1, max_length=80)
+    amplitudes: list[float] = Field(min_length=8, max_length=512)
+    rssi: int | None = Field(default=None, ge=-120, le=0)
+    zone: str | None = Field(default=None, max_length=40)
+
+@app.post("/api/csi")
+def receive_csi(packet: CSIPacket):
+    """Receive CSI subcarrier amplitudes from a compatible ESP32 receiver."""
+    now = datetime.now(timezone.utc).isoformat()
+    values = packet.amplitudes
+    if not all(abs(v) < 1e7 for v in values):
+        raise HTTPException(status_code=422, detail="CSI amplitudes contain invalid values")
+    baseline = csi_windows.setdefault(packet.device_id, deque(maxlen=150))
+    vector_mean = statistics.fmean(values)
+    vector_spread = statistics.pstdev(values)
+    if len(baseline) < 20:
+        baseline.append((vector_mean, vector_spread))
+        score = 0.0
+        motion = "Calibrating empty-room baseline"
+    else:
+        ref_mean = statistics.fmean(x[0] for x in list(baseline)[-100:])
+        ref_spread = statistics.fmean(x[1] for x in list(baseline)[-100:])
+        score = round(abs(vector_mean-ref_mean) / max(abs(ref_mean), 1.0) * 100
+                      + abs(vector_spread-ref_spread) / max(abs(ref_spread), 1.0) * 100, 2)
+        motion = "Possible movement" if score >= 18 else "No significant change"
+        baseline.append((vector_mean, vector_spread))
+    with lock:
+        csi_state.update({"receiver_connected": True, "device_id": packet.device_id,
+                          "last_seen": now, "subcarriers": len(values),
+                          "motion_score": score, "motion": motion,
+                          "calibrated": len(baseline) >= 20})
+    with sqlite3.connect(DB_PATH) as c:
+        c.execute("""INSERT INTO csi_samples(timestamp,device_id,rssi,amplitudes_json,
+                     motion_score,motion,zone) VALUES(?,?,?,?,?,?,?)""",
+                  (now, packet.device_id, packet.rssi, json.dumps(values),
+                   score, motion, packet.zone))
+    return {"ok": True, "timestamp": now, "device_id": packet.device_id,
+            "subcarriers": len(values), "motion_score": score, "motion": motion,
+            "calibrated": len(baseline) >= 20,
+            "note": "Experimental signal-change detector; not object identification or precise localization."}
+
+@app.get("/api/csi/status")
+def csi_status():
+    with lock:
+        return dict(csi_state)
 
 @app.get("/health")
 def health():
