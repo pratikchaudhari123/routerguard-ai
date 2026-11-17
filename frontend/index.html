@@ -43,6 +43,17 @@ td,th{text-align:left;padding:10px;border-bottom:1px solid #263a55;font-size:13p
 <h3>Current session comparison</h3><div style="overflow-x:auto"><table><thead><tr><th>Zone</th><th>Condition</th><th>Samples</th><th>Average RSSI</th><th>Min / max</th><th>RSSI range</th><th>Avg variation</th></tr></thead><tbody id="expRows"><tr><td colspan="7">Start a session to collect experiment data.</td></tr></tbody></table></div>
 <p class="note">A useful first trial: record 2 minutes empty, then 30–60 seconds standing and walking in each manually labelled zone. Repeat each condition several times. The output is a comparison of signal patterns, not proof of a person or an exact distance.</p>
 </div>
+<div class="card">
+<div class="row"><h2>Quick signal-change test (MacBook RSSI)</h2><span class="status" id="senseStatus">Not calibrated</span></div>
+<p class="note">This quick test calibrates the signal currently received by the MacBook, then flags sufficiently large RSSI changes. It is useful for checking whether movement affects this receiver's signal, but it does NOT detect every object anywhere in the router's coverage area and does NOT identify objects.</p>
+<div class="grid" style="margin-bottom:10px">
+<div><div class="label">Empty-area baseline</div><div class="value" id="senseBaseline" style="font-size:21px">—</div></div>
+<div><div class="label">Current change</div><div class="value" id="senseDelta" style="font-size:21px">—</div></div>
+<div><div class="label">Trigger threshold</div><div class="value" id="senseThreshold" style="font-size:21px">—</div></div>
+</div>
+<div class="row"><div><button onclick="calibrateSensing()">Calibrate empty area &amp; start</button> <button onclick="stopSensing()">Stop test</button></div><small id="senseUpdated">Waiting for calibration</small></div>
+<h3>Signal-change events</h3><div style="overflow-x:auto"><table><thead><tr><th>Time</th><th>Reading</th><th>Change from baseline</th><th>Interpretation</th></tr></thead><tbody id="senseEvents"><tr><td colspan="4">No events yet.</td></tr></tbody></table></div>
+</div>
 <div class="card"><div class="row"><h2>CSI motion receiver</h2><span class="status" id="csiConnection">Receiver not connected</span></div>
 <div class="grid" style="margin-bottom:0">
 <div><div class="label">Motion status</div><div class="value" id="csiMotion" style="font-size:20px">Waiting for CSI</div></div>
@@ -147,6 +158,28 @@ async function refreshExperiment(){
  }catch(e){console.error(e);}
 }
 function safeText(value){return String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
+async function calibrateSensing(){
+ try{
+  const r=await fetch('/api/sensing/calibrate',{method:'POST'});
+  const d=await r.json();if(!r.ok)throw new Error(d.detail||'Calibration failed');
+  await refreshSensing();
+ }catch(e){el('senseStatus').textContent=e.message;}
+}
+async function stopSensing(){
+ try{await fetch('/api/sensing/stop',{method:'POST'});await refreshSensing();}
+ catch(e){console.error(e);}
+}
+async function refreshSensing(){
+ try{
+  const d=await(await fetch('/api/sensing/status')).json();
+  el('senseStatus').textContent=d.status||'Waiting';
+  el('senseBaseline').textContent=d.baseline_rssi===null?'—':d.baseline_rssi+' dBm';
+  el('senseDelta').textContent=d.last_delta_db===null?'—':d.last_delta_db+' dB';
+  el('senseThreshold').textContent=d.threshold_db+' dB';
+  el('senseUpdated').textContent=d.enabled?'Monitoring · '+(d.measurement||'RSSI'):(d.calibrated?'Stopped':'Waiting for calibration');
+  el('senseEvents').innerHTML=d.events.length?d.events.map(e=>'<tr><td>'+new Date(e.timestamp).toLocaleTimeString()+'</td><td>'+e.rssi+' dBm</td><td>'+e.delta_db+' dB</td><td>'+String(e.status).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))+'</td></tr>').join(''):'<tr><td colspan="4">No changes recorded yet.</td></tr>';
+ }catch(e){console.error(e);}
+}
 async function refreshCSI(){
  try{
   const d=await(await fetch('/api/csi/status')).json();
@@ -175,5 +208,5 @@ async function refresh(){
  }catch(e){console.error(e)}
 }
 async function sampleNow(){await fetch('/api/sample',{method:'POST'});refresh()}
-refresh();refreshCSI();refreshExperiment();setInterval(refresh,2000);setInterval(refreshCSI,1000);setInterval(refreshExperiment,3000);
+refresh();refreshCSI();refreshExperiment();refreshSensing();setInterval(refresh,2000);setInterval(refreshCSI,1000);setInterval(refreshExperiment,3000);setInterval(refreshSensing,1000);
 </script></body></html>
