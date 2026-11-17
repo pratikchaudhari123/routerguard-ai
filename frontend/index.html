@@ -85,6 +85,20 @@ td,th{text-align:left;padding:10px;border-bottom:1px solid #263a55;font-size:13p
  <div class="row"><small id="routerDiagUpdated">Waiting for diagnostics</small><button onclick="refreshRouterDiagnostics()">Run checks again</button></div>
  <p class="note">Reachability or WDS status proves connectivity only. It does not prove that the router exposes upstream RSSI or CSI. The project will not label RSSI changes as human detection.</p>
 </div>
+<div class="card" id="csiPanel">
+ <div class="row"><h2>Live CSI receiver · real radio measurements</h2><span class="status" id="csiConnection">Waiting for receiver</span></div>
+ <p class="note">CSI amplitude vectors arrive from the ESP32-S3 over Wi-Fi. MacBook RSSI is never substituted for CSI. A CSI change is a movement/presence candidate, not proof of a human or identity.</p>
+ <div class="grid">
+  <div><div class="label">Receiver</div><div class="value" id="csiDevice" style="font-size:19px">Not connected</div><small id="csiSeen">No real CSI packets received</small></div>
+  <div><div class="label">CSI subcarriers</div><div class="value" id="csiSubs">—</div><small>From last real packet</small></div>
+  <div><div class="label">Signal-change score</div><div class="value" id="csiScore">—</div><small id="csiMotion">Waiting for CSI</small></div>
+  <div><div class="label">Presence candidate</div><div class="value" id="humanStatus" style="font-size:18px">Waiting for CSI</div><small id="humanCal">Not calibrated</small></div>
+ </div>
+ <div class="row"><div><button onclick="startHumanCalibration()">Calibrate empty area (60 real CSI packets)</button> <button onclick="stopHumanDetection()">Stop CSI candidate monitor</button></div><small id="humanSeen">No real CSI packets yet</small></div>
+ <div class="grid"><div><div class="label">CSI baseline packets</div><div class="value" id="csiBaselineCount" style="font-size:20px">0 / 60</div></div><div><div class="label">Changed subcarrier fraction</div><div class="value" id="humanChanged" style="font-size:20px">—</div></div></div>
+ <h3>Candidate events</h3><div style="overflow-x:auto"><table><thead><tr><th>Time</th><th>Event</th><th>Score</th><th>Changed subcarriers</th></tr></thead><tbody id="humanEvents"><tr><td colspan="4">No CSI candidate events yet.</td></tr></tbody></table></div>
+ <p class="note"><b>Connection:</b> ESP32-S3 must join the same non-isolated LAN as this MacBook and POST to <code>http://MACBOOK_LAN_IP:8000/api/csi</code>. USB is for flashing and power; CSI data travels over Wi-Fi. The Jio/TP-Link routers remain unchanged.</p>
+</div>
 <div class="card">
 <div class="row"><h2>Measured Wi-Fi room coverage survey</h2><span class="status" id="fieldState">Waiting for survey points</span></div>
 <p class="note">Enter your room size, walk to a physical point, and record the RSSI measured by this MacBook. Repeat across the room. The heatmap is interpolated only from the points you measure; it is not a live radar or a person tracker.</p>
@@ -276,7 +290,8 @@ async function refreshCSI(){
    fetch('/api/csi/status').then(r=>r.json()),
    fetch('/api/human-detection/status').then(r=>r.json())
   ]);
-  el('csiConnection').textContent=d.receiver_connected?'CSI receiver connected':'Receiver not connected';
+  el('csiConnection').textContent=d.receiver_connected?'CSI receiver connected':'Receiver offline / no recent packets';
+  el('csiDevice').textContent=d.device_id||'Not connected';
   el('csiMotion').textContent=d.motion||'Waiting for CSI';
   el('csiScore').textContent=d.motion_score===null?'—':d.motion_score;
   el('csiSubs').textContent=d.subcarriers||'—';
@@ -285,7 +300,8 @@ async function refreshCSI(){
   el('humanStatus').textContent=h.status||'Waiting for CSI';
   el('humanScore').textContent=h.score===null?'—':h.score;
   el('humanChanged').textContent=h.changed_fraction===null?'—':Math.round(h.changed_fraction*100)+'%';
-  el('humanCal').textContent=h.calibrated?'Ready':(h.calibration_active?'Collecting '+h.baseline_packets+'/'+h.required_baseline_packets:'Not calibrated');
+  el('humanCal').textContent=h.calibrated?'Baseline ready':(h.calibration_active?'Collecting empty-room baseline':'Not calibrated');
+  el('csiBaselineCount').textContent=(h.baseline_packets||0)+' / '+(h.required_baseline_packets||60);
   el('humanSeen').textContent=h.last_seen?'Last real CSI packet: '+new Date(h.last_seen).toLocaleTimeString():'No real CSI packets received yet';
   el('humanEvents').innerHTML=h.events.length?h.events.map(e=>'<tr><td>'+new Date(e.timestamp).toLocaleTimeString()+'</td><td>'+safeText(e.status)+'</td><td>'+e.score+'</td><td>'+Math.round(e.changed_fraction*100)+'%</td></tr>').join(''):'<tr><td colspan="4">No real CSI events yet.</td></tr>';
  }catch(e){console.error(e)}
@@ -380,5 +396,5 @@ async function refreshLocalization(){
  }catch(e){console.error(e);}
 }
 
-refresh();refreshCoverage();refreshExperiment();refreshSensing();refreshDiagnostics();refreshRouterDiagnostics();setInterval(refreshDiagnostics,2000);setInterval(refresh,2000);setInterval(refreshCoverage,5000);setInterval(refreshExperiment,3000);setInterval(refreshSensing,1000);setInterval(refreshRouterDiagnostics,10000);
+refresh();refreshCoverage();refreshExperiment();refreshSensing();refreshDiagnostics();refreshRouterDiagnostics();refreshCSI();setInterval(refreshDiagnostics,2000);setInterval(refresh,2000);setInterval(refreshCoverage,5000);setInterval(refreshExperiment,3000);setInterval(refreshSensing,1000);setInterval(refreshRouterDiagnostics,10000);setInterval(refreshCSI,1000);
 </script></body></html>
