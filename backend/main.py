@@ -14,7 +14,7 @@ from threading import Lock
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 DB_PATH = Path("data/wifisense.db")
