@@ -16,7 +16,7 @@ let result: [String: Any] = [
     "connected": connected,
     "ssid": ssid,
     "interface": wifi.interfaceName,
-    "rssi": connected ? rssi : NSNull(),
+    "rssi": connected && rssi != 0 ? rssi : NSNull(),
     "noise": connected ? noise : NSNull(),
     "channel": channel > 0 ? channel : NSNull(),
     "tx_rate_mbps": txRate > 0 ? txRate : NSNull(),
