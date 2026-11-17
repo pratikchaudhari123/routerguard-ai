@@ -427,3 +427,7 @@ def history(limit: int = 120):
 @app.post("/api/sample")
 def sample():
     return take_sample()
+
+
+from backend.localization import router as localization_router
+app.include_router(localization_router)
