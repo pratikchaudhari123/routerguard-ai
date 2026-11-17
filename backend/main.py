@@ -18,7 +18,9 @@ DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 INTERVAL = 2
 lock = Lock()
 state = {"connected": False, "ssid": None, "interface": None, "rssi": None,
-         "noise": None, "channel": None, "timestamp": None,
+         "noise": None, "channel": None, "band": None, "channel_width_mhz": None,
+         "tx_rate_mbps": None, "cca_percent": None, "phy_mode": None,
+         "sniffer_supported": None, "timestamp": None,
          "variation_db": None, "activity": "Waiting for signal samples",
          "activity_level": "neutral", "source": None, "history": []}
 samples = deque(maxlen=90)
@@ -48,7 +50,9 @@ def read_wifi():
     system = platform.system()
     iface = wifi_interface()
     ssid = None
-    rssi = noise = channel = None
+    rssi = noise = channel = channel_width_mhz = tx_rate_mbps = cca_percent = None
+    band = phy_mode = None
+    sniffer_supported = None
     source = None
 
     if system == "Darwin":
@@ -56,7 +60,9 @@ def read_wifi():
             ssid_out = run_cmd(["networksetup", "-getairportnetwork", iface])
             if ":" in ssid_out:
                 ssid = ssid_out.split(":", 1)[1].strip()
-        info = run_cmd(["wdutil", "info"])
+        # wdutil often requires administrator privileges on recent macOS versions.
+        # Use a previously-authorized sudo session without prompting the web server.
+        info = run_cmd(["sudo", "-n", "wdutil", "info"], timeout=6) or run_cmd(["wdutil", "info"], timeout=6)
         if info:
             source = "macOS wdutil"
             for line in info.splitlines():
@@ -67,9 +73,24 @@ def read_wifi():
                 if m and "noise" in low:
                     noise = int(m.group(1))
                 if "channel" in low:
-                    cm = re.search(r"(\d{1,3})", line)
+                    cm = re.search(r"(?:5g|2g)?(\d{1,3})", line, re.I)
                     if cm:
                         channel = int(cm.group(1))
+                    wm = re.search(r"/(20|40|80|160)(?:\s|$)", line)
+                    if wm:
+                        channel_width_mhz = int(wm.group(1))
+                if "tx rate" in low:
+                    rm = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*mbps", line, re.I)
+                    if rm:
+                        tx_rate_mbps = float(rm.group(1))
+                if re.search(r"\bcca\b", low):
+                    cm = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*%", line)
+                    if cm:
+                        cca_percent = float(cm.group(1))
+                if "phy mode" in low:
+                    phy_mode = line.split(":", 1)[-1].strip()
+                if "sniffer supported" in low:
+                    sniffer_supported = "yes" in low
         if rssi is None and iface:
             airport = "/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport"
             info = run_cmd([airport, "-I"])
@@ -93,9 +114,14 @@ def read_wifi():
                 m = re.search(r"signal:\s*(-?\d+)\s*dBm", line)
                 if m: rssi = int(m.group(1))
             source = "Linux iw"
+    if channel is not None:
+        band = "2.4 GHz" if channel <= 14 else "5 GHz"
     return {"connected": bool(ssid or rssi is not None), "ssid": ssid,
             "interface": iface, "rssi": rssi, "noise": noise,
-            "channel": channel, "source": source}
+            "channel": channel, "band": band, "channel_width_mhz": channel_width_mhz,
+            "tx_rate_mbps": tx_rate_mbps, "cca_percent": cca_percent,
+            "phy_mode": phy_mode, "sniffer_supported": sniffer_supported,
+            "source": source}
 
 def init_db():
     with sqlite3.connect(DB_PATH) as c:
