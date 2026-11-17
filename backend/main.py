@@ -519,8 +519,21 @@ def sensing_events():
 
 @app.get("/api/csi/status")
 def csi_status():
+    # Receiver is online only while real CSI packets are arriving.
     with lock:
-        return dict(csi_state)
+        result = dict(csi_state)
+    last_seen = result.get("last_seen")
+    fresh = False
+    if last_seen:
+        try:
+            age = (datetime.now(timezone.utc) - datetime.fromisoformat(last_seen)).total_seconds()
+            fresh = 0 <= age <= 10
+        except ValueError:
+            fresh = False
+    result["receiver_connected"] = fresh
+    result["receiver_status"] = "online" if fresh else "waiting_for_recent_packet"
+    result["measurement_source"] = "ESP32-S3 CSI callback packets"
+    return result
 
 class ExperimentStart(BaseModel):
     zone: str = Field(min_length=1, max_length=40)
