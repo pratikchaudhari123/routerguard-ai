@@ -40,7 +40,8 @@ human_detection = {
     "device_id": None, "packets_seen": 0, "baseline_packets": 0,
     "required_baseline_packets": 60, "status": "Waiting for a real CSI receiver",
     "presence_candidate": False, "score": None, "changed_fraction": None,
-    "last_seen": None, "events": deque(maxlen=50), "high_count": 0, "low_count": 0
+    "last_seen": None, "events": deque(maxlen=50), "high_count": 0, "low_count": 0,
+    "high_since": None, "low_since": None, "confirmation_seconds": 5
 }
 human_calibration_vectors = []
 human_baseline_mean = []
@@ -60,7 +61,7 @@ def human_detector_reset():
         "device_id": None, "packets_seen": 0, "baseline_packets": 0,
         "status": "Waiting for a real CSI receiver", "presence_candidate": False,
         "score": None, "changed_fraction": None, "last_seen": None,
-        "high_count": 0, "low_count": 0
+        "high_count": 0, "low_count": 0, "high_since": None, "low_since": None
     })
 
 def human_detector_ingest(device_id, values, timestamp):
@@ -129,24 +130,41 @@ def human_detector_ingest(device_id, values, timestamp):
     human_detection["last_seen"] = timestamp
     human_detection["score"] = score
     human_detection["changed_fraction"] = changed_fraction
+    packet_time = datetime.fromisoformat(timestamp)
     if changed:
         human_detection["high_count"] += 1
         human_detection["low_count"] = 0
+        human_detection["low_since"] = None
+        if human_detection["high_since"] is None:
+            human_detection["high_since"] = timestamp
     else:
         human_detection["low_count"] += 1
         human_detection["high_count"] = 0
+        human_detection["high_since"] = None
+        if human_detection["low_since"] is None:
+            human_detection["low_since"] = timestamp
 
     previous = human_detection["presence_candidate"]
-    if not previous and human_detection["high_count"] >= 3:
+    high_since = human_detection["high_since"]
+    low_since = human_detection["low_since"]
+    high_duration = ((packet_time - datetime.fromisoformat(high_since)).total_seconds()
+                     if high_since else 0)
+    low_duration = ((packet_time - datetime.fromisoformat(low_since)).total_seconds()
+                    if low_since else 0)
+
+    # Require continuous CSI deviation for five seconds. A brief spike is not
+    # promoted to a presence candidate. This is temporal filtering, not human
+    # identity classification.
+    if not previous and changed and high_duration >= human_detection["confirmation_seconds"]:
         human_detection["presence_candidate"] = True
-        human_detection["status"] = "Possible human presence / movement — CSI change sustained"
-    elif previous and human_detection["low_count"] >= 10:
+        human_detection["status"] = "Sustained movement candidate — CSI changed for 5+ seconds"
+    elif previous and not changed and low_duration >= 5:
         human_detection["presence_candidate"] = False
-        human_detection["status"] = "No sustained CSI change observed"
+        human_detection["status"] = "CSI returned to baseline — candidate cleared"
     elif previous:
-        human_detection["status"] = "Possible human presence / movement — CSI change sustained"
+        human_detection["status"] = "Sustained movement candidate — monitoring"
     else:
-        human_detection["status"] = "No sustained CSI change observed"
+        human_detection["status"] = "CSI change not yet sustained for 5 seconds"
 
     current = human_detection["presence_candidate"]
     if current != previous:
@@ -157,7 +175,7 @@ def human_detector_ingest(device_id, values, timestamp):
         })
     return {"status": human_detection["status"], "presence_candidate": current,
             "score": score, "changed_fraction": changed_fraction,
-            "calibrated": True}
+            "calibrated": True, "event_changed": current != previous}
 
 
 experiment_state = {"active": False, "session_id": None, "label": None, "zone": None, "phase": None, "started_at": None}
@@ -376,10 +394,24 @@ def take_sample():
                    None if reading["sniffer_supported"] is None else int(reading["sniffer_supported"])))
     return result
 
+async def retention_cleanup():
+    cutoff = datetime.now(timezone.utc).timestamp() - (7 * 24 * 60 * 60)
+    cutoff_iso = datetime.fromtimestamp(cutoff, timezone.utc).isoformat()
+    with sqlite3.connect(DB_PATH) as c:
+        c.execute("DELETE FROM csi_samples WHERE timestamp < ?", (cutoff_iso,))
+        c.execute("DELETE FROM human_detection_events WHERE timestamp < ?", (cutoff_iso,))
+        c.execute("DELETE FROM samples WHERE timestamp < ?", (cutoff_iso,))
+        c.commit()
+
 async def sampler_loop():
+    last_cleanup = 0.0
     while True:
         try:
             await asyncio.to_thread(take_sample)
+            now = datetime.now(timezone.utc).timestamp()
+            if now - last_cleanup >= 24 * 60 * 60:
+                await asyncio.to_thread(retention_cleanup)
+                last_cleanup = now
         except Exception as exc:
             with lock:
                 state["activity"] = f"Collector error: {exc}"
@@ -416,7 +448,7 @@ def receive_csi(packet: CSIPacket):
     if not all(abs(v) < 1e7 for v in values):
         raise HTTPException(status_code=422, detail="CSI amplitudes contain invalid values")
     human_result = human_detector_ingest(packet.device_id, values, now)
-    if human_result.get("calibrated"):
+    if human_result.get("calibrated") and human_result.get("event_changed"):
         with sqlite3.connect(DB_PATH) as c:
             c.execute("""INSERT INTO human_detection_events(timestamp,device_id,status,score,
                          changed_fraction,presence_candidate) VALUES(?,?,?,?,?,?)""",
@@ -478,7 +510,8 @@ def human_detection_status():
         "events": list(human_detection["events"]),
         "measurement_source": "CSI amplitude vectors received from configured CSI receiver",
         "rssi_used_for_human_detection": False,
-        "interpretation": "Possible presence/movement candidate only; not a validated human-vs-object classifier."
+        "confirmation_seconds": human_detection["confirmation_seconds"],
+        "interpretation": "Five-second sustained CSI-change candidate only; not a validated human-vs-object classifier."
     }
 
 @app.get("/api/sensing/status")
