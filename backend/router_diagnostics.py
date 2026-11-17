@@ -43,7 +43,7 @@ def _arp_map():
         return {}
     found = {}
     for line in out.splitlines():
-        ip_match = re.search(r"\\((\\d{1,3}(?:\\.\\d{1,3}){3})\\)", line)
+        ip_match = re.search(r"\((\d{1,3}(?:\.\d{1,3}){3})\)", line)
         mac_match = re.search(r" at ((?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2})", line)
         if ip_match and mac_match:
             found[ip_match.group(1)] = mac_match.group(1).upper()
