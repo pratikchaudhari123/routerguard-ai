@@ -1,193 +1,105 @@
-# WiFiSense
+# WiFiSense — two-router measurement diagnostic
 
-A local experimental Wi-Fi signal dashboard. It reads the Wi-Fi signal information exposed by the network interface your MacBook is currently using. You do not need to enter router IPs or connect a second router.
+This branch is configured for the current experiment:
 
-## What this MVP does
-- Detects the current Wi-Fi interface and connected SSID on macOS.
-- Samples RSSI (and noise/channel when the OS exposes them) every 2 seconds.
-- Shows a live signal graph and stores samples in SQLite.
-- Highlights unusually large RSSI changes as **possible activity**, not confirmed human presence.
+- Main access point: JioAirFiber
+- WDS extender: TP-Link TL-WR850N V3
+- Development and data-collection computer: macOS MacBook
+- Intended goal: determine whether the existing router pair exposes a usable **Jio-to-TP-Link WDS signal measurement** for controlled movement experiments.
 
-## Run on your Mac (recommended)
+## Important: what this version does and does not do
 
-Run natively rather than in Docker so the app can query macOS Wi-Fi diagnostics.
+### It does
+- Read the MacBook's own Wi-Fi RSSI through Apple CoreWLAN when available.
+- Store real MacBook RSSI samples in SQLite.
+- Verify reachability of the known JioAirFiber and TP-Link management IPs using read-only ping checks.
+- Check whether HTTP/HTTPS management ports answer.
+- Show MAC addresses only when they are present in the MacBook's local ARP cache.
+- Record labelled experiments and export their actual measurements as CSV.
+
+### It does not
+- Read the JioAirFiber-to-TP-Link WDS RSSI.
+- Read CSI from either router.
+- Convert MacBook RSSI into router-to-router RSSI.
+- Confirm that a person crossed the signal path.
+- Generate synthetic CSI, synthetic RSSI, or simulated detections.
+
+**The main technical blocker remains access to WDS-link measurements.** The TP-Link web interface documents WDS status and connected-client statistics, but the project has not verified an API or telemetry field for the upstream WDS peer's RSSI. CSI is not exposed by the currently installed TP-Link firmware through any method verified in this project. A working WDS bridge does not itself mean its RSSI/CSI is available to the application.
+
+## Run on macOS
+
+Run natively, not in Docker, because the MacBook collector uses macOS Wi-Fi interfaces.
 
 ```bash
-git clone https://github.com/pratikchaudhari123/routerguard-ai.git
-cd routerguard-ai
+cd ~/routerguard-ai
+git fetch origin
+git checkout feature/human-motion-detection
+git pull --ff-only origin feature/human-motion-detection
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
-uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Open **http://127.0.0.1:8000**.
+Open the dashboard:
 
-If you already cloned the earlier version, update it first:
+- On the MacBook: http://127.0.0.1:8000
+- From another device on the same LAN: http://MACBOOK_LAN_IP:8000
+
+If the MacBook firewall asks whether Python may accept incoming connections, allow it only on the trusted home network while testing.
+
+## Router diagnostics
+
+The dashboard's **Two-router hardware diagnostics** section checks these previously observed addresses:
+
+| Device | Default address |
+|---|---|
+| JioAirFiber | `192.168.31.1` |
+| TP-Link TL-WR850N | `192.168.0.1` |
+
+If the router LAN addresses change, set environment variables before starting the app:
 
 ```bash
-git pull origin main
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+export ROUTER_JIO_IP=192.168.31.1
+export ROUTER_TPLINK_IP=192.168.0.1
 ```
 
-Stop the server with Ctrl+C.
+The endpoint `GET /api/router-diagnostics` performs read-only ping, TCP checks on ports 80 and 443, and a local ARP-cache lookup. A router may be unreachable from the MacBook because the two devices are on different subnets or the router blocks ping. That result is not proof that WDS is down.
 
-## Signal access notes
-On macOS the collector tries `wdutil info`, then the legacy Apple `airport -I` utility. macOS versions and hardware differ: Apple may hide RSSI from unprivileged command-line tools. If the dashboard says RSSI is unavailable, the application is running but macOS is not exposing a supported reading through these methods. Do not treat an empty reading as zero.
+### Verify WDS status manually
 
-Linux support uses `iw` if installed and the user has permission to read wireless link data.
+1. Open `http://192.168.0.1` while connected to the TP-Link network.
+2. Open **Advanced → Status → Wireless**.
+3. Read the **WDS Status** field.
+4. TP-Link's WDS guidance says `Run` means the bridge is established.
+5. Do not change settings during this diagnostic.
 
-## What the signal graph means
-RSSI changes can be caused by people, device movement, walls, multipath, interference, access-point power changes, or normal radio variation. This MVP does **not** identify a person, direction, or crossing event. It is a first-stage signal-collection experiment.
+The dashboard deliberately does not scrape the router's authenticated admin session, store credentials, or issue undocumented router API calls.
 
-Research-grade Wi-Fi sensing generally uses CSI (Channel State Information), which ordinary macOS Wi-Fi APIs do not expose. CSI requires compatible Wi-Fi hardware, firmware, and drivers; a normal phone hotspot plus a dashboard is not sufficient for reliable through-room detection.
+## Controlled MacBook RSSI experiment
+
+This is only a diagnostic of the MacBook-to-associated-access-point link. It is not a substitute for WDS RSSI.
+
+1. Keep the MacBook and its connected access point in fixed positions.
+2. Start an experiment and record an empty-room baseline.
+3. Record separate walking/crossing trials.
+4. Repeat at least three times and export the CSV.
+5. Compare measured distributions; do not interpret a single threshold event as a person detection.
+
+The RSSI can change because of people, objects, device movement, walls, multipath, interference, or normal radio behavior.
 
 ## Data and privacy
-Samples are stored locally in `data/wifisense.db`. The app does not scan other devices, capture payloads, deauthenticate clients, or change router settings.
 
+- Local database: `data/wifisense.db`
+- The app does not capture Wi-Fi payloads, deauthenticate clients, change router settings, or attempt router login.
+- Router diagnostics are limited to the two configured IP addresses.
+- No router passwords or admin session tokens are needed by the application.
 
-## Device-free motion sensing (CSI development branch)
+## Firmware warning
 
-This branch adds the first backend receiver interface for a compatible CSI device.
+Do not flash firmware as part of this experiment. TP-Link warns that firmware must match the exact hardware version and regional variant; an incorrect image can damage the router. The currently observed hardware is TL-WR850N V3.8 / V3 and the installed firmware is Build 210407. Any firmware decision must be checked against the exact device label and TP-Link's local support page first.
 
-### Architecture
+## Success criteria for the next stage
 
-- Existing JioFiber router: ordinary Wi-Fi transmitter / access point.
-- ESP32 CSI receiver: captures channel-state measurements from received Wi-Fi packets.
-- MacBook: runs this FastAPI service, stores measurements in SQLite, and hosts the dashboard.
-- Future processing stage: calibrated signal processing, movement events, and multi-receiver zone estimation.
-
-Official reference implementation and firmware examples:
-- Espressif ESP-CSI: https://github.com/espressif/esp-csi
-- ESP-CSI programming guide: https://documentation.espressif.com/esp-csi/master/README.md
-
-Espressif documents a router-as-transmitter setup in which an ESP32 sends ping traffic and captures CSI from router replies. Whether this works depends on the access point's Wi-Fi configuration and compatibility. One receiver can provide experimental motion detection; reliable room/zone localization generally needs additional spatially separated receivers and calibration.
-
-### CSI ingestion API
-
-POST JSON packets to `/api/csi`:
-
-```json
-{
-  "device_id": "esp32-csi-01",
-  "rssi": -54,
-  "amplitudes": [12.1, 13.4, 11.8, 14.0, 12.7, 13.1, 11.9, 12.8]
-}
-```
-
-The current endpoint is an integration scaffold. It accepts amplitude vectors, stores them, and emits an experimental change score after 20 baseline packets. The threshold and feature calculation are placeholders for bench testing, not a validated detector. Do not interpret the score as proof of a person/object or as a position estimate. The ESP32 firmware's native CSI output must be parsed into the API's amplitude-vector format before connecting it.
-
-Check receiver status at `GET /api/csi/status`.
-
-### Calibration protocol (first experiment)
-
-1. Place router and receiver in fixed positions, with the receiver in the target room.
-2. Keep the room empty and still while collecting baseline packets.
-3. Walk through the intended sensing area, then repeat with a pet or moving object.
-4. Record multiple trials and compare signal features against the empty baseline.
-5. Only after repeatable results should zone labels and a trained classifier be added.
-
-### Hardware and accuracy boundaries
-
-The current MacBook RSSI collector is retained as a diagnostic only; it is not CSI and cannot provide exact object coordinates. The ESP32 CSI receiver is the next required sensing component unless another compatible CSI-capable receiver is available. A single link can detect channel changes but generally cannot uniquely determine where within a room the movement occurred. Multi-zone localization requires multiple links/receivers, spatial calibration, and validation against false alarms.
-
-
-## Controlled movement experiment recorder
-
-The dashboard now includes a labelled RSSI experiment recorder on the `feature/csi-motion-sensing` branch.
-
-1. Keep the router and MacBook fixed and do not change Wi-Fi band/channel during a session.
-2. Enter a manually measured test zone (for example, `Zone A`) and choose `Empty room baseline`.
-3. Click **Start recording** and leave the zone empty for about 2 minutes.
-4. Change the condition to `Person standing` or `Person walking`, set the zone where the movement occurs, then click **Apply zone / condition**.
-5. Repeat the same test several times for each zone. Use **Stop recording** when finished.
-6. Compare sample count, average RSSI, min/max, RSSI range, and average variation by zone and condition.
-
-Samples are collected at the normal 2-second interval and stored in a separate `experiment_samples` SQLite table. Existing signal history is not deleted. The comparison is descriptive and does not yet classify human presence, infer a zone, estimate distance, or identify a person. Zone names are manual ground-truth labels for experiments.
-
-API endpoints:
-- `POST /api/experiment/start` — start a labelled session.
-- `POST /api/experiment/phase` — change zone/condition while recording.
-- `POST /api/experiment/stop` — stop recording.
-- `GET /api/experiment/status` — current recorder state.
-- `GET /api/experiment/summary` — grouped statistics for the current/most recent session.
-
-Allowed phases: `empty`, `standing`, `walking`, `object_moving`.
-
-
-## Local RSSI signal-change test (no CSI hardware)
-
-The dashboard includes a quick exploratory test at **Quick signal-change test (MacBook RSSI)**:
-
-1. Run the app natively on the MacBook and wait at least 10 seconds for RSSI samples.
-2. Keep the router and MacBook fixed. Leave the test area empty.
-3. Click **Calibrate empty area & start**.
-4. Walk or move an object in different parts of the room, one trial at a time.
-5. Watch the change-from-baseline value and event list. Click **Stop test** when finished.
-
-This test compares the RSSI measured at the MacBook with an empty-area baseline. It can show whether a movement coincides with a change at that receiver. It is **not device-free object detection across the entire Wi-Fi coverage area**, does not identify humans versus objects, and cannot estimate position. Small RSSI changes may be missed; unrelated interference or router/client behavior may trigger changes. The threshold is an initial experiment setting, not a validated detection threshold.
-
-For coverage-area sensing, continue with compatible CSI receiver hardware and multiple spatially separated sensing links. The CSI endpoint remains an integration scaffold until real receiver firmware sends correctly parsed CSI amplitudes.
-
-
-## Multi-receiver CSI area-estimation scaffold
-
-The dashboard now includes a **Multi-receiver area estimation** panel and these endpoints:
-
-- `PUT /api/localization/nodes` — register a CSI receiver with a stable ID, its measured room-map coordinates (0–100), and a zone label.
-- `GET /api/localization/nodes` — list registered receivers.
-- `POST /api/localization/calibrate` — clear per-receiver history and begin an empty-room baseline.
-- `POST /api/localization/csi` — ingest CSI amplitude vectors from each registered receiver.
-- `GET /api/localization/status` — receiver status, activity flags, active zones, and an experimental candidate centroid.
-- `POST /api/localization/stop` — stop the calibration state.
-
-Each receiver must send at least 30 baseline packets while the monitored area is empty. After that, the scaffold compares the incoming CSI amplitude mean/spread with that receiver's baseline. When at least two receivers report a fresh change at the same time, the dashboard displays a weighted centroid of their installed coordinates.
-
-**Important:** this is an experimental visualization scaffold, not validated triangulation or exact person tracking. The weighted centroid is not a physically derived location estimate; it can be wrong when receiver coverage overlaps unevenly, when reflections dominate, or when multiple people move. The MacBook RSSI collector does not feed this map. Real CSI-capable receiver firmware and labelled multi-zone tests are required before interpreting results as human location.
-
-Example receiver registration:
-
-```bash
-curl -X PUT http://127.0.0.1:8002/api/localization/nodes \
-  -H 'Content-Type: application/json' \
-  -d '{"node_id":"esp32-csi-01","x":15,"y":20,"zone":"North-West"}'
-```
-
-Example CSI packet (send from receiver firmware or a test harness):
-
-```bash
-curl -X POST http://127.0.0.1:8002/api/localization/csi \
-  -H 'Content-Type: application/json' \
-  -d '{"node_id":"esp32-csi-01","amplitudes":[12.1,13.4,11.8,14.0,12.7,13.1,11.9,12.8]}'
-```
-
-Register at least two receivers at different physical positions, calibrate with the room empty, and have both send packets continuously. Do not send synthetic or copied vectors and interpret them as real detections.
-
-
-## First hardware setup: one router + one ESP32-S3
-
-For the first device-free sensing experiment, a second ordinary router/extender is **not required**. Keep the existing Wi-Fi router as the transmitter/access point and use one ESP32-S3 development board as the CSI receiver. The ESP32 joins the same Wi-Fi network as the MacBook and sends measured CSI amplitude vectors to this app over the LAN.
-
-Firmware project and exact build/flash instructions:
-- [ESP32-S3 CSI receiver firmware](firmware/esp32-csi-receiver/README.md)
-
-The firmware uses Espressif's documented router-as-transmitter CSI method (ESP32 sends ping packets to the router and captures CSI from replies). Router/AP compatibility must be tested; if the router does not produce usable CSI in this mode, a second ESP32 transmitter/receiver link may be needed. Do not reset or modify the ISP router as a first step.
-
-The dashboard now has a **Main router & CSI receiver connection** panel. It displays the MacBook's current Wi-Fi network and whether real CSI packets have arrived. The browser cannot scan/configure Wi-Fi credentials for an ESP32; configure the receiver's SSID/password and MacBook LAN API URL in ESP-IDF menuconfig as documented in the firmware guide.
-
-## Human-presence candidate detection (CSI path)
-
-The human-sensing path is deliberately separate from the MacBook RSSI graph.
-
-1. Connect a compatible CSI receiver and have it POST **real measured** amplitude vectors to `POST /api/csi`.
-2. Keep the monitored area empty and still, then click **Calibrate empty room (60 CSI packets)**.
-3. Wait until the dashboard says the baseline is ready.
-4. Walk through the monitored link/area and observe the sustained CSI-deviation events.
-5. Repeat empty-room and human-motion trials under different times and conditions. Record non-human disturbances separately.
-
-The detector computes per-subcarrier deviations from an empty-room mean and standard deviation, requires sustained changes across multiple packets, and applies hysteresis before raising or clearing a candidate event. The API is `GET /api/human-detection/status`, `POST /api/human-detection/calibrate`, and `POST /api/human-detection/stop`.
-
-**Interpretation boundary:** the output is a *possible human presence/movement candidate*, not a validated human classifier. CSI changes can also be caused by pets, moving objects, doors, fans, people outside the intended zone, multipath, or interference. The detector does not identify a person, count people, infer identity, or provide precise location. Human-vs-object classification requires a labelled dataset collected with the actual receiver, room, router, and placement, followed by held-out testing. MacBook RSSI is never treated as CSI and never triggers this CSI human-detection status. Synthetic or replayed vectors must not be presented as live detections.
+We can proceed to an RSSI-based router-link experiment only after identifying a repeatable, documented or directly verified read-only source for the **Jio-to-TP-Link WDS peer RSSI**. If the firmware does not expose it, additional dashboard or Python code cannot create that measurement. At that point, the two-router-only design needs a hardware/firmware capability change before human-crossing sensing can be evaluated.
