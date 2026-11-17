@@ -167,6 +167,17 @@ curl -X POST http://127.0.0.1:8002/api/localization/csi \
 Register at least two receivers at different physical positions, calibrate with the room empty, and have both send packets continuously. Do not send synthetic or copied vectors and interpret them as real detections.
 
 
+## First hardware setup: one router + one ESP32-S3
+
+For the first device-free sensing experiment, a second ordinary router/extender is **not required**. Keep the existing Wi-Fi router as the transmitter/access point and use one ESP32-S3 development board as the CSI receiver. The ESP32 joins the same Wi-Fi network as the MacBook and sends measured CSI amplitude vectors to this app over the LAN.
+
+Firmware project and exact build/flash instructions:
+- [ESP32-S3 CSI receiver firmware](firmware/esp32-csi-receiver/README.md)
+
+The firmware uses Espressif's documented router-as-transmitter CSI method (ESP32 sends ping packets to the router and captures CSI from replies). Router/AP compatibility must be tested; if the router does not produce usable CSI in this mode, a second ESP32 transmitter/receiver link may be needed. Do not reset or modify the ISP router as a first step.
+
+The dashboard now has a **Main router & CSI receiver connection** panel. It displays the MacBook's current Wi-Fi network and whether real CSI packets have arrived. The browser cannot scan/configure Wi-Fi credentials for an ESP32; configure the receiver's SSID/password and MacBook LAN API URL in ESP-IDF menuconfig as documented in the firmware guide.
+
 ## Human-presence candidate detection (CSI path)
 
 The human-sensing path is deliberately separate from the MacBook RSSI graph.
