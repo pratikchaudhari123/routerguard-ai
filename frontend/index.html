@@ -54,6 +54,25 @@ td,th{text-align:left;padding:10px;border-bottom:1px solid #263a55;font-size:13p
 <div class="row"><div><button onclick="calibrateSensing()">Calibrate empty area &amp; start</button> <button onclick="stopSensing()">Stop test</button></div><small id="senseUpdated">Waiting for calibration</small></div>
 <h3>Signal-change events</h3><div style="overflow-x:auto"><table><thead><tr><th>Time</th><th>Reading</th><th>Change from baseline</th><th>Interpretation</th></tr></thead><tbody id="senseEvents"><tr><td colspan="4">No events yet.</td></tr></tbody></table></div>
 </div>
+<div class="card">
+<div class="row"><h2>Multi-receiver area estimation</h2><span class="status" id="locStatus">Waiting for CSI receivers</span></div>
+<p class="note">Register each CSI receiver at its measured position on a simple 0–100 room map. After at least two separated receivers are sending CSI, collect an empty-room baseline. The map shows only an experimental activity centroid when two or more receivers report simultaneous changes; it is not an exact person location.</p>
+<div class="grid">
+<div><div class="label">Receiver ID</div><input id="locNodeId" value="esp32-csi-01" maxlength="80" style="width:100%;padding:10px;background:#0a1626;color:#e6eefb;border:1px solid #263a55;border-radius:8px"></div>
+<div><div class="label">Map X (0–100)</div><input id="locX" type="number" min="0" max="100" value="20" style="width:100%;padding:10px;background:#0a1626;color:#e6eefb;border:1px solid #263a55;border-radius:8px"></div>
+<div><div class="label">Map Y (0–100)</div><input id="locY" type="number" min="0" max="100" value="20" style="width:100%;padding:10px;background:#0a1626;color:#e6eefb;border:1px solid #263a55;border-radius:8px"></div>
+<div><div class="label">Zone label</div><input id="locZone" value="North-West" maxlength="40" style="width:100%;padding:10px;background:#0a1626;color:#e6eefb;border:1px solid #263a55;border-radius:8px"></div>
+</div>
+<div class="row"><div><button onclick="registerLocNode()">Register / update receiver</button> <button onclick="calibrateLocalization()">Calibrate empty room</button> <button onclick="stopLocalization()">Stop</button></div><small id="locCounts">0 receivers · 0 calibrated</small></div>
+<canvas id="localizationMap" width="900" height="420" style="height:320px;margin-top:14px"></canvas>
+<div class="grid" style="margin-bottom:0">
+<div><div class="label">Candidate X</div><div class="value" id="locCandidateX" style="font-size:20px">—</div></div>
+<div><div class="label">Candidate Y</div><div class="value" id="locCandidateY" style="font-size:20px">—</div></div>
+<div><div class="label">Active zones</div><div class="value" id="locZones" style="font-size:18px">—</div></div>
+</div>
+<div id="locReceivers" class="note">No receiver registered.</div>
+<p class="note">Hardware requirement: two or more compatible CSI receivers, physically separated and configured to send CSI packets to this MacBook. The current MacBook RSSI feed cannot populate this map. The centroid algorithm is an early test scaffold and needs validation before being treated as tracking.</p>
+</div>
 <div class="card"><div class="row"><h2>CSI motion receiver</h2><span class="status" id="csiConnection">Receiver not connected</span></div>
 <div class="grid" style="margin-bottom:0">
 <div><div class="label">Motion status</div><div class="value" id="csiMotion" style="font-size:20px">Waiting for CSI</div></div>
@@ -208,5 +227,56 @@ async function refresh(){
  }catch(e){console.error(e)}
 }
 async function sampleNow(){await fetch('/api/sample',{method:'POST'});refresh()}
-refresh();refreshCSI();refreshExperiment();refreshSensing();setInterval(refresh,2000);setInterval(refreshCSI,1000);setInterval(refreshExperiment,3000);setInterval(refreshSensing,1000);
+
+async function registerLocNode(){
+ try{
+  const body={node_id:el('locNodeId').value.trim(),x:Number(el('locX').value),y:Number(el('locY').value),zone:el('locZone').value.trim()};
+  const r=await fetch('/api/localization/nodes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d=await r.json();if(!r.ok)throw new Error(d.detail||'Could not register receiver');
+  await refreshLocalization();
+ }catch(e){el('locStatus').textContent=e.message;}
+}
+async function calibrateLocalization(){
+ try{
+  const r=await fetch('/api/localization/calibrate',{method:'POST'});const d=await r.json();
+  if(!r.ok)throw new Error(d.detail||'Calibration failed');
+  el('locStatus').textContent='Empty-room baseline collecting';
+  await refreshLocalization();
+ }catch(e){el('locStatus').textContent=e.message;}
+}
+async function stopLocalization(){
+ try{await fetch('/api/localization/stop',{method:'POST'});await refreshLocalization();}
+ catch(e){el('locStatus').textContent=e.message;}
+}
+function drawLocalizationMap(d){
+ const c=el('localizationMap'),ctx=c.getContext('2d'),w=c.width,h=c.height;
+ ctx.clearRect(0,0,w,h);ctx.fillStyle='#0a1626';ctx.fillRect(0,0,w,h);
+ ctx.strokeStyle='#263a55';ctx.lineWidth=1;
+ for(let i=0;i<=10;i++){let x=i*w/10,y=i*h/10;ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke();ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke();}
+ const px=x=>x*w/100,py=y=>h-y*h/100;
+ (d.receivers||[]).forEach(n=>{
+  ctx.beginPath();ctx.arc(px(n.x),py(n.y),n.active&&n.fresh?13:9,0,Math.PI*2);
+  ctx.fillStyle=n.active&&n.fresh?'#f5ce75':'#56a9ff';ctx.fill();
+  ctx.fillStyle='#e6eefb';ctx.font='14px sans-serif';ctx.fillText(n.node_id,px(n.x)+12,py(n.y)-10);
+ });
+ if(d.candidate_position){
+  const x=px(d.candidate_position.x),y=py(d.candidate_position.y);
+  ctx.strokeStyle='#ff9c76';ctx.lineWidth=3;ctx.beginPath();ctx.arc(x,y,18,0,Math.PI*2);ctx.moveTo(x-26,y);ctx.lineTo(x+26,y);ctx.moveTo(x,y-26);ctx.lineTo(x,y+26);ctx.stroke();
+  ctx.fillStyle='#ffcfb8';ctx.fillText('candidate activity',x+24,y+5);
+ }
+}
+async function refreshLocalization(){
+ try{
+  const d=await(await fetch('/api/localization/status')).json();
+  el('locStatus').textContent=d.status;
+  el('locCounts').textContent=d.registered_receivers+' receivers · '+d.calibrated_receivers+' calibrated · '+d.baseline_packets_required+' baseline packets each';
+  el('locCandidateX').textContent=d.candidate_position?d.candidate_position.x:'—';
+  el('locCandidateY').textContent=d.candidate_position?d.candidate_position.y:'—';
+  el('locZones').textContent=(d.active_zones||[]).join(', ')||'—';
+  el('locReceivers').textContent=(d.receivers||[]).map(n=>n.node_id+' · '+n.zone+' · score '+n.score+' · '+(n.active&&n.fresh?'activity':'quiet/stale')+' · '+n.baseline_packets+' packets').join(' | ')||'No receiver registered.';
+  drawLocalizationMap(d);
+ }catch(e){console.error(e);}
+}
+
+refresh();refreshCSI();refreshExperiment();refreshSensing();setInterval(refresh,2000);refreshLocalization();setInterval(refreshLocalization,1000);setInterval(refreshCSI,1000);setInterval(refreshExperiment,3000);setInterval(refreshSensing,1000);
 </script></body></html>
