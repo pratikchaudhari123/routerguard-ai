@@ -61,6 +61,27 @@ def read_wifi():
     source = None
 
     if system == "Darwin":
+        helper = Path("tools/macos_wifi_signal")
+        if helper.exists():
+            try:
+                raw = subprocess.run([str(helper)], capture_output=True, text=True, timeout=4)
+                if raw.returncode == 0 and raw.stdout.strip():
+                    native = json.loads(raw.stdout)
+                    return {
+                        "connected": bool(native.get("connected")),
+                        "ssid": native.get("ssid") or None,
+                        "interface": native.get("interface") or iface,
+                        "rssi": native.get("rssi") if isinstance(native.get("rssi"), int) else None,
+                        "noise": native.get("noise") if isinstance(native.get("noise"), int) else None,
+                        "channel": native.get("channel") if isinstance(native.get("channel"), int) else None,
+                        "band": ("2.4 GHz" if native.get("channel", 0) <= 14 else "5 GHz") if native.get("channel") else None,
+                        "channel_width_mhz": None,
+                        "tx_rate_mbps": native.get("tx_rate_mbps"),
+                        "cca_percent": None, "phy_mode": None,
+                        "sniffer_supported": None, "source": native.get("source", "Apple CoreWLAN")
+                    }
+            except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+                pass
         if iface:
             ssid_out = run_cmd(["networksetup", "-getairportnetwork", iface])
             if ":" in ssid_out:
