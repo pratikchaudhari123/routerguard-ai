@@ -29,6 +29,12 @@ td,th{text-align:left;padding:10px;border-bottom:1px solid #263a55;font-size:13p
 </section>
 <div class="card"><div class="row"><h2>Live RSSI signal</h2><small id="source">Reading local Wi-Fi diagnostics</small></div>
 <canvas id="chart" width="1100" height="270"></canvas><small>Lower (more negative) values mean weaker received signal.</small></div>
+
+<div class="card"><div class="row"><h2>Wi-Fi coverage field · live visualisation</h2><span class="status" id="fieldState">Waiting for valid signal</span></div>
+<p class="note">Animated coverage illustration. The circles represent an approximate radio field, not a measured floor plan or a detected person's exact location.</p>
+<canvas id="field" width="1100" height="420" style="height:420px"></canvas>
+<div class="row"><small id="fieldMetric">Signal variation: unavailable</small><small>Router → radio field → MacBook receiver</small></div>
+</div>
 <div class="card"><h2>Radio details</h2><div class="grid" style="margin-bottom:0">
 <div><div class="label">Wi-Fi interface</div><div id="interface" class="value" style="font-size:18px">—</div></div>
 <div><div class="label">Noise floor</div><div id="noise" class="value" style="font-size:18px">—</div></div>
@@ -38,6 +44,48 @@ td,th{text-align:left;padding:10px;border-bottom:1px solid #263a55;font-size:13p
 <div class="card note"><b>Important limitation:</b> This version reads signal metrics exposed by your computer's Wi-Fi driver. A change in RSSI can be caused by people, movement, walls, interference, or normal network behavior. It does not prove that a person crossed the signal path. Proper CSI-based human sensing generally requires compatible Wi-Fi hardware and drivers.</div>
 <script>
 const el=id=>document.getElementById(id);
+function drawField(rssi,variation,activity){
+ const c=el('field'); if(!c) return;
+ const ctx=c.getContext('2d'), w=c.width, h=c.height;
+ ctx.clearRect(0,0,w,h);
+ ctx.fillStyle='#0a1626';ctx.fillRect(0,0,w,h);
+ ctx.strokeStyle='#1c3049';ctx.lineWidth=1;
+ for(let x=30;x<w;x+=55){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke()}
+ for(let y=25;y<h;y+=55){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke()}
+ const t=Date.now()/900, cx=330, cy=210;
+ const strength=typeof rssi==='number' && rssi<0 ? Math.max(.25,Math.min(1,(rssi+90)/55)) : .55;
+ const base=85+strength*75;
+ for(let i=0;i<4;i++){
+   const radius=base+i*54+Math.sin(t-i*.7)*5;
+   ctx.beginPath();ctx.arc(cx,cy,radius,0,Math.PI*2);
+   ctx.strokeStyle='rgba(75,169,255,'+(0.48-i*.09)+')';ctx.lineWidth=2;ctx.stroke();
+ }
+ ctx.beginPath();ctx.arc(cx,cy,base+220,0,Math.PI*2);
+ ctx.fillStyle='rgba(52,132,220,0.045)';ctx.fill();
+ // Router
+ ctx.fillStyle='#e6eefb';ctx.fillRect(cx-34,cy-22,68,44);
+ ctx.fillStyle='#2864dc';ctx.fillRect(cx-24,cy-12,48,24);
+ ctx.strokeStyle='#9fcaff';ctx.lineWidth=3;
+ ctx.beginPath();ctx.moveTo(cx-15,cy-22);ctx.lineTo(cx-28,cy-47);ctx.moveTo(cx+15,cy-22);ctx.lineTo(cx+28,cy-47);ctx.stroke();
+ ctx.fillStyle='#e6eefb';ctx.font='bold 16px sans-serif';ctx.fillText('Wi-Fi router',cx-43,cy+52);
+ // Mac receiver
+ const mx=900,my=210;
+ ctx.fillStyle='#c8d6e8';ctx.fillRect(mx-44,my-30,88,58);
+ ctx.fillStyle='#2864dc';ctx.fillRect(mx-36,my-22,72,42);
+ ctx.fillStyle='#e6eefb';ctx.fillRect(mx-53,my+29,106,6);
+ ctx.fillStyle='#e6eefb';ctx.fillText('MacBook receiver',mx-67,my+57);
+ // signal path
+ ctx.setLineDash([7,8]);ctx.strokeStyle='rgba(115,190,255,.6)';ctx.lineWidth=2;
+ ctx.beginPath();ctx.moveTo(cx+35,cy);ctx.lineTo(mx-55,my);ctx.stroke();ctx.setLineDash([]);
+ // Animated travelling pulse is a field animation, not a person/object detection.
+ const px=cx+45+((t*38)%470), py=cy+Math.sin(t*1.7)*22;
+ ctx.beginPath();ctx.arc(px,py,8+Math.sin(t*3)*2,0,Math.PI*2);
+ ctx.fillStyle='rgba(255,203,105,.9)';ctx.fill();
+ ctx.fillStyle='#91a4bd';ctx.font='13px sans-serif';ctx.fillText('Animated radio-field pulse (illustrative)',525,35);
+ const valid=typeof rssi==='number' && rssi<0;
+ el('fieldState').textContent=valid?'Signal feed connected':'Waiting for valid signal';
+ el('fieldMetric').textContent=valid?'RSSI '+rssi+' dBm · variation '+(variation??'—')+' dB · '+(activity||''):'No valid RSSI sample yet — spatial sensing unavailable';
+}
 function draw(values){
  const c=el('chart'),ctx=c.getContext('2d'),w=c.width,h=c.height;ctx.clearRect(0,0,w,h);
  ctx.strokeStyle='#263a55';ctx.lineWidth=1;
@@ -59,7 +107,7 @@ async function refresh(){
  el('updated').textContent=s.timestamp?'Updated '+new Date(s.timestamp).toLocaleTimeString():'Waiting';
  el('source').textContent=s.source||'No supported signal source detected';
  el('interface').textContent=s.interface||'—';el('noise').textContent=s.noise===null?'—':s.noise+' dBm';
- el('channel').textContent=s.channel??'—';draw(s.history||[]);
+ el('channel').textContent=s.channel??'—';draw(s.history||[]);drawField(s.rssi,s.variation_db,s.activity);
  const hist=await(await fetch('/api/history?limit=12')).json();
  el('rows').innerHTML=hist.reverse().map(x=>'<tr><td>'+new Date(x.timestamp).toLocaleTimeString()+'</td><td>'+(x.rssi??'—')+'</td><td>'+(x.variation??'—')+'</td><td>'+x.activity+'</td></tr>').join('')||'<tr><td colspan="4">No samples yet</td></tr>';
  }catch(e){console.error(e)}
