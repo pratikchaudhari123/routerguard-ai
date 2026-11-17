@@ -1,84 +1,159 @@
 import asyncio
-import os
+import platform
+import re
 import sqlite3
+import subprocess
+from collections import deque
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
 
-from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.monitor import perform_scan
-
-load_dotenv()
-DB_PATH = Path(os.getenv("DATABASE_PATH", "data/routerguard.db"))
+DB_PATH = Path("data/wifisense.db")
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-KNOWN_MACS = {x.strip().upper() for x in os.getenv("KNOWN_MACS", "").split(",") if x.strip()}
-INTERVAL = max(10, int(os.getenv("SCAN_INTERVAL_SECONDS", "30")))
+INTERVAL = 2
 lock = Lock()
-state = {"timestamp": None, "routers": [], "devices": []}
+state = {"connected": False, "ssid": None, "interface": None, "rssi": None,
+         "noise": None, "channel": None, "timestamp": None,
+         "variation_db": None, "activity": "Waiting for signal samples",
+         "activity_level": "neutral", "source": None, "history": []}
+samples = deque(maxlen=90)
 
-def db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+def run_cmd(args, timeout=4):
+    try:
+        p = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        return p.stdout if p.returncode == 0 else ""
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+def wifi_interface():
+    if platform.system() == "Darwin":
+        out = run_cmd(["networksetup", "-listallhardwareports"])
+        blocks = re.split(r"\n\s*\n", out)
+        for block in blocks:
+            if "Hardware Port: Wi-Fi" in block or "Hardware Port: AirPort" in block:
+                m = re.search(r"Device: (\S+)", block)
+                if m:
+                    return m.group(1)
+    elif platform.system() == "Linux":
+        out = run_cmd(["sh", "-lc", "iw dev | awk '$1==\"Interface\"{print $2; exit}'"])
+        return out.strip() or None
+    return None
+
+def read_wifi():
+    system = platform.system()
+    iface = wifi_interface()
+    ssid = None
+    rssi = noise = channel = None
+    source = None
+
+    if system == "Darwin":
+        if iface:
+            ssid_out = run_cmd(["networksetup", "-getairportnetwork", iface])
+            if ":" in ssid_out:
+                ssid = ssid_out.split(":", 1)[1].strip()
+        info = run_cmd(["wdutil", "info"])
+        if info:
+            source = "macOS wdutil"
+            for line in info.splitlines():
+                low = line.lower()
+                m = re.search(r"(-?\d+)\s*dBm", line, re.I)
+                if m and "rssi" in low:
+                    rssi = int(m.group(1))
+                if m and "noise" in low:
+                    noise = int(m.group(1))
+                if "channel" in low:
+                    cm = re.search(r"(\d{1,3})", line)
+                    if cm:
+                        channel = int(cm.group(1))
+        if rssi is None and iface:
+            airport = "/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport"
+            info = run_cmd([airport, "-I"])
+            if info:
+                source = "macOS airport utility"
+                for line in info.splitlines():
+                    if " SSID:" in line:
+                        ssid = line.split(":", 1)[1].strip() or ssid
+                    m = re.search(r"\bagrCtlRSSI:\s*(-?\d+)", line)
+                    if m: rssi = int(m.group(1))
+                    m = re.search(r"\bagrCtlNoise:\s*(-?\d+)", line)
+                    if m: noise = int(m.group(1))
+                    m = re.search(r"\bchannel:\s*(\d+)", line)
+                    if m: channel = int(m.group(1))
+    elif system == "Linux":
+        if iface:
+            info = run_cmd(["iw", "dev", iface, "link"])
+            for line in info.splitlines():
+                m = re.search(r"SSID:\s*(.*)", line)
+                if m: ssid = m.group(1).strip()
+                m = re.search(r"signal:\s*(-?\d+)\s*dBm", line)
+                if m: rssi = int(m.group(1))
+            source = "Linux iw"
+    return {"connected": bool(ssid or rssi is not None), "ssid": ssid,
+            "interface": iface, "rssi": rssi, "noise": noise,
+            "channel": channel, "source": source}
 
 def init_db():
-    with db() as c:
-        c.execute("""CREATE TABLE IF NOT EXISTS events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT NOT NULL, severity TEXT NOT NULL,
-            source TEXT NOT NULL, message TEXT NOT NULL, details TEXT
-        )""")
-        c.execute("""CREATE TABLE IF NOT EXISTS devices (
-            mac TEXT PRIMARY KEY, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL,
-            last_ip TEXT, approved INTEGER NOT NULL DEFAULT 0
-        )""")
+    with sqlite3.connect(DB_PATH) as c:
+        c.execute("""CREATE TABLE IF NOT EXISTS samples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL,
+            ssid TEXT, interface TEXT, rssi INTEGER, noise INTEGER,
+            channel INTEGER, variation REAL, activity TEXT)""")
 
-def event(severity, source, message, details=""):
-    with db() as c:
-        c.execute("INSERT INTO events(timestamp,severity,source,message,details) VALUES(datetime('now'),?,?,?,?)",
-                  (severity, source, message, details))
-
-def scan_once():
-    result = perform_scan(KNOWN_MACS)
+def take_sample():
+    reading = read_wifi()
+    timestamp = datetime.now(timezone.utc).isoformat()
+    rssi = reading["rssi"]
+    variation = None
+    activity = "Signal unavailable"
+    level = "neutral"
+    if rssi is not None:
+        samples.append(rssi)
+        if len(samples) >= 5:
+            recent = list(samples)[-15:]
+            variation = round(max(recent) - min(recent), 1)
+            if variation >= 8:
+                activity, level = "High signal variation — possible activity", "warning"
+            elif variation >= 4:
+                activity, level = "Signal variation observed", "notice"
+            else:
+                activity, level = "Signal relatively stable", "good"
+        else:
+            activity = "Collecting baseline samples"
+    result = {**reading, "timestamp": timestamp, "variation_db": variation,
+              "activity": activity, "activity_level": level}
     with lock:
-        previous = {d["mac"] for d in state.get("devices", [])}
         state.update(result)
-    for r in result["routers"]:
-        if r["status"] == "unreachable":
-            event("warning", r["name"], f"Router {r['ip']} did not respond to ping", "Ping can be blocked; verify via router admin page.")
-    for d in result["devices"]:
-        with db() as c:
-            old = c.execute("SELECT mac FROM devices WHERE mac=?", (d["mac"],)).fetchone()
-            c.execute("""INSERT INTO devices(mac,first_seen,last_seen,last_ip,approved)
-                         VALUES(?,?,?,?,?) ON CONFLICT(mac) DO UPDATE SET
-                         last_seen=excluded.last_seen,last_ip=excluded.last_ip""",
-                      (d["mac"], result["timestamp"], result["timestamp"], d["ip"], int(d["known"])))
-        if not old:
-            event("info" if d["known"] else "warning", d["mac"],
-                  "Approved device first observed" if d["known"] else "New/unknown device observed",
-                  f"IP={d['ip']} MAC={d['mac']}")
+        state["history"] = list(samples)
+    with sqlite3.connect(DB_PATH) as c:
+        c.execute("""INSERT INTO samples(timestamp,ssid,interface,rssi,noise,channel,variation,activity)
+                     VALUES(?,?,?,?,?,?,?,?)""",
+                  (timestamp, reading["ssid"], reading["interface"], rssi,
+                   reading["noise"], reading["channel"], variation, activity))
     return result
 
-async def scanner_loop():
+async def sampler_loop():
     while True:
         try:
-            await asyncio.to_thread(scan_once)
+            await asyncio.to_thread(take_sample)
         except Exception as exc:
-            event("error", "scanner", "Scan failed", str(exc))
+            with lock:
+                state["activity"] = f"Collector error: {exc}"
+                state["activity_level"] = "error"
         await asyncio.sleep(INTERVAL)
 
 @asynccontextmanager
 async def lifespan(app):
     init_db()
-    task = asyncio.create_task(scanner_loop())
+    task = asyncio.create_task(sampler_loop())
     yield
     task.cancel()
 
-app = FastAPI(title="RouterGuard AI", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="WiFiSense", version="0.2.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
 @app.get("/", response_class=HTMLResponse)
@@ -87,32 +162,21 @@ def home():
 
 @app.get("/health")
 def health():
-    return {"ok": True, "service": "RouterGuard AI"}
+    return {"ok": True, "service": "WiFiSense"}
 
 @app.get("/api/status")
 def status():
     with lock:
         return dict(state)
 
-@app.get("/api/events")
-def events(limit: int = 100):
-    limit = max(1, min(limit, 500))
-    with db() as c:
-        rows = c.execute("SELECT id,timestamp,severity,source,message,details FROM events ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
-    return [dict(r) for r in rows]
+@app.get("/api/history")
+def history(limit: int = 120):
+    limit = max(1, min(limit, 1000))
+    with sqlite3.connect(DB_PATH) as c:
+        c.row_factory = sqlite3.Row
+        rows = c.execute("SELECT * FROM samples ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    return [dict(r) for r in reversed(rows)]
 
-@app.post("/api/scan")
-def scan():
-    return scan_once()
-
-@app.post("/api/devices/{mac}/approve")
-def approve(mac: str):
-    mac = mac.upper()
-    with db() as c:
-        row = c.execute("SELECT mac FROM devices WHERE mac=?", (mac,)).fetchone()
-        if not row:
-            return {"ok": False, "error": "Device has not been observed yet"}
-        c.execute("UPDATE devices SET approved=1 WHERE mac=?", (mac,))
-    KNOWN_MACS.add(mac)
-    event("info", mac, "Device approved by administrator")
-    return {"ok": True, "mac": mac}
+@app.post("/api/sample")
+def sample():
+    return take_sample()
