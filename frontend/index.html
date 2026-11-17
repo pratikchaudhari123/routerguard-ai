@@ -86,7 +86,18 @@ td,th{text-align:left;padding:10px;border-bottom:1px solid #263a55;font-size:13p
 <div id="locReceivers" class="note">No receiver registered.</div>
 <p class="note">Hardware requirement: two or more compatible CSI receivers, physically separated and configured to send CSI packets to this MacBook. The current MacBook RSSI feed cannot populate this map. The centroid algorithm is an early test scaffold and needs validation before being treated as tracking.</p>
 </div>
-<div class="card"><div class="row"><h2>CSI motion receiver</h2><span class="status" id="csiConnection">Receiver not connected</span></div>
+<div class="card"><div class="row"><h2>Human presence detection · CSI</h2><span class="status" id="csiConnection">Receiver not connected</span></div>
+<p class="note">This is the human-sensing path. Connect a compatible CSI receiver and send real CSI amplitude vectors. First calibrate with the room empty; the detector then flags sustained channel changes as possible human presence or movement. It does not use MacBook RSSI as CSI.</p>
+<div class="row"><div><button onclick="startHumanCalibration()">Calibrate empty room (60 CSI packets)</button> <button onclick="stopHumanDetection()">Stop human detection</button></div><small id="humanSeen">Waiting for real CSI packets</small></div>
+<div class="grid" style="margin-bottom:0">
+<div><div class="label">Human presence status</div><div class="value" id="humanStatus" style="font-size:20px">Waiting for CSI receiver</div></div>
+<div><div class="label">CSI deviation score</div><div class="value" id="humanScore" style="font-size:20px">—</div></div>
+<div><div class="label">Subcarriers changed</div><div class="value" id="humanChanged" style="font-size:20px">—</div></div>
+<div><div class="label">Empty-room calibration</div><div class="value" id="humanCal" style="font-size:20px">Not calibrated</div></div>
+</div>
+<p class="note">A positive result means sustained CSI deviation, not proof of a human. Fans, doors, pets, objects, people, and RF interference can all change CSI. Human-vs-object classification requires labelled real-world training trials and validation.</p>
+<div class="row"><h3>Human-presence candidate events</h3></div><div style="overflow-x:auto"><table><thead><tr><th>Time</th><th>Result</th><th>Score</th><th>Changed subcarriers</th></tr></thead><tbody id="humanEvents"><tr><td colspan="4">No real CSI events yet.</td></tr></tbody></table></div>
+<div class="row"><h3>Raw CSI receiver diagnostics</h3></div>
 <div class="grid" style="margin-bottom:0">
 <div><div class="label">Motion status</div><div class="value" id="csiMotion" style="font-size:20px">Waiting for CSI</div></div>
 <div><div class="label">Signal change score</div><div class="value" id="csiScore" style="font-size:20px">—</div></div>
@@ -250,15 +261,35 @@ async function refreshSensing(){
   el('senseEvents').innerHTML=d.events.length?d.events.map(e=>'<tr><td>'+new Date(e.timestamp).toLocaleTimeString()+'</td><td>'+e.rssi+' dBm</td><td>'+e.delta_db+' dB</td><td>'+String(e.status).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))+'</td></tr>').join(''):'<tr><td colspan="4">No changes recorded yet.</td></tr>';
  }catch(e){console.error(e);}
 }
+async function startHumanCalibration(){
+ try{
+  const r=await fetch('/api/human-detection/calibrate',{method:'POST'});
+  const d=await r.json();if(!r.ok)throw new Error(d.detail||'Could not start calibration');
+  await refreshCSI();
+ }catch(e){el('humanStatus').textContent=e.message;}
+}
+async function stopHumanDetection(){
+ try{await fetch('/api/human-detection/stop',{method:'POST'});await refreshCSI();}
+ catch(e){console.error(e);}
+}
 async function refreshCSI(){
  try{
-  const d=await(await fetch('/api/csi/status')).json();
+  const [d,h]=await Promise.all([
+   fetch('/api/csi/status').then(r=>r.json()),
+   fetch('/api/human-detection/status').then(r=>r.json())
+  ]);
   el('csiConnection').textContent=d.receiver_connected?'CSI receiver connected':'Receiver not connected';
   el('csiMotion').textContent=d.motion||'Waiting for CSI';
   el('csiScore').textContent=d.motion_score===null?'—':d.motion_score;
   el('csiSubs').textContent=d.subcarriers||'—';
   el('csiCal').textContent=d.calibrated?'Baseline ready':'Collecting baseline';
   el('csiSeen').textContent=d.last_seen?'Last CSI packet: '+new Date(d.last_seen).toLocaleTimeString():'No CSI packets received yet.';
+  el('humanStatus').textContent=h.status||'Waiting for CSI';
+  el('humanScore').textContent=h.score===null?'—':h.score;
+  el('humanChanged').textContent=h.changed_fraction===null?'—':Math.round(h.changed_fraction*100)+'%';
+  el('humanCal').textContent=h.calibrated?'Ready':(h.calibration_active?'Collecting '+h.baseline_packets+'/'+h.required_baseline_packets:'Not calibrated');
+  el('humanSeen').textContent=h.last_seen?'Last real CSI packet: '+new Date(h.last_seen).toLocaleTimeString():'No real CSI packets received yet';
+  el('humanEvents').innerHTML=h.events.length?h.events.map(e=>'<tr><td>'+new Date(e.timestamp).toLocaleTimeString()+'</td><td>'+safeText(e.status)+'</td><td>'+e.score+'</td><td>'+Math.round(e.changed_fraction*100)+'%</td></tr>').join(''):'<tr><td colspan="4">No real CSI events yet.</td></tr>';
  }catch(e){console.error(e)}
 }
 async function refresh(){
