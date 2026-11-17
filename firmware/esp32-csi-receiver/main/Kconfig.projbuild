@@ -1,0 +1,25 @@
+menu "WiFiSense receiver configuration"
+
+config WIFISENSE_WIFI_SSID
+    string "Wi-Fi SSID"
+    default ""
+    help
+        SSID of the existing router network that the MacBook is connected to.
+
+config WIFISENSE_WIFI_PASSWORD
+    string "Wi-Fi password"
+    default ""
+    help
+        Password for the existing Wi-Fi network.
+
+config WIFISENSE_API_URL
+    string "RouterGuard CSI API URL"
+    default "http://192.168.31.131:8000/api/csi"
+    help
+        Use the MacBook LAN IP. Do not use localhost or 127.0.0.1.
+
+config WIFISENSE_DEVICE_ID
+    string "CSI receiver ID"
+    default "esp32-s3-csi-01"
+
+endmenu
