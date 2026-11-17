@@ -31,6 +31,19 @@ td,th{text-align:left;padding:10px;border-bottom:1px solid #263a55;font-size:13p
 <canvas id="chart" width="1100" height="270"></canvas><small>Lower (more negative) values mean weaker received signal.</small></div>
 
 
+
+<div class="card">
+<div class="row"><h2>System health &amp; sampling verification</h2><span class="status" id="diagHealth">Checking collector…</span></div>
+<div class="grid">
+<div><div class="label">Samples in last minute</div><div class="value" id="diagRecent">—</div><small>Expected about 30 at 2-second intervals</small></div>
+<div><div class="label">Average sample interval</div><div class="value" id="diagInterval">—</div><small>Seconds between stored readings</small></div>
+<div><div class="label">Last sample age</div><div class="value" id="diagAge">—</div><small>How recently the collector wrote data</small></div>
+<div><div class="label">Database samples</div><div class="value" id="diagTotal">—</div><small>Total stored RSSI samples</small></div>
+</div>
+<div class="row"><small id="diagExperiment">Experiment recorder: checking…</small><button onclick="window.location.href='/api/experiment/export.csv'">Export current experiment CSV</button></div>
+<p class="note">This verifies data collection and recording only. It does not verify person detection, object detection, or room localization.</p>
+</div>
+
 <div class="card">
 <div class="row"><h2>Movement experiment recorder</h2><span class="status" id="expStatus">No active experiment</span></div>
 <p class="note">Record labelled test periods while the router and MacBook remain stationary. Zone labels are entered by you for controlled experiments; they are not inferred from Wi-Fi.</p>
@@ -95,6 +108,23 @@ td,th{text-align:left;padding:10px;border-bottom:1px solid #263a55;font-size:13p
 <div class="card note"><b>Important limitation:</b> This version reads signal metrics exposed by your computer's Wi-Fi driver. A change in RSSI can be caused by people, movement, walls, interference, or normal network behavior. It does not prove that a person crossed the signal path. Proper CSI-based human sensing generally requires compatible Wi-Fi hardware and drivers.</div>
 <script>
 const el=id=>document.getElementById(id);
+
+async function refreshDiagnostics(){
+ try{
+  const r=await fetch('/api/diagnostics');
+  const d=await r.json();
+  el('diagHealth').textContent=d.ok?'Collector receiving samples':'Collector stale / unavailable';
+  el('diagRecent').textContent=d.samples_in_last_60_seconds+' / ~'+d.expected_samples_per_minute_approx;
+  el('diagInterval').textContent=d.average_interval_seconds_recent===null?'—':d.average_interval_seconds_recent+' s';
+  el('diagAge').textContent=d.last_sample_age_seconds===null?'—':d.last_sample_age_seconds+' s';
+  el('diagTotal').textContent=d.database_total_samples;
+  el('diagExperiment').textContent='Current experiment: '+(d.experiment_active?'recording':'stopped')+' · '+d.experiment_samples_current_session+' samples';
+ }catch(e){
+  el('diagHealth').textContent='Diagnostics API error';
+  console.error(e);
+ }
+}
+
 function drawField(rssi,variation,activity){
  const c=el('field'); if(!c) return;
  const ctx=c.getContext('2d'), w=c.width, h=c.height;
@@ -278,5 +308,5 @@ async function refreshLocalization(){
  }catch(e){console.error(e);}
 }
 
-refresh();refreshCSI();refreshExperiment();refreshSensing();setInterval(refresh,2000);refreshLocalization();setInterval(refreshLocalization,1000);setInterval(refreshCSI,1000);setInterval(refreshExperiment,3000);setInterval(refreshSensing,1000);
+refresh();refreshCSI();refreshExperiment();refreshSensing();refreshDiagnostics();setInterval(refreshDiagnostics,2000);setInterval(refresh,2000);refreshLocalization();setInterval(refreshLocalization,1000);setInterval(refreshCSI,1000);setInterval(refreshExperiment,3000);setInterval(refreshSensing,1000);
 </script></body></html>
