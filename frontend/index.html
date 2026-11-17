@@ -19,7 +19,7 @@ td,th{text-align:left;padding:10px;border-bottom:1px solid #263a55;font-size:13p
 @media(max-width:600px){body{padding:16px}h1{font-size:24px}}
 </style></head><body>
 <header><div><h1>WiFiSense <span class="status">LIVE EXPERIMENT</span></h1>
-<div class="sub">Passive Wi-Fi signal variation monitor · using this Mac's connected network</div></div>
+<div class="sub">Live Wi-Fi signal experiment · MacBook receiver measurements</div><p class="note"><b>Measurement scope:</b> RSSI is read at this MacBook from its currently connected access point. It is not the JioAirFiber ↔ TP-Link WDS link. Signal changes are movement candidates only, not confirmed human detection.</p></div>
 <button onclick="sampleNow()">Sample now</button></header>
 <section class="grid">
 <div class="card"><div class="label">Connected network</div><div class="value" id="ssid">Checking…</div><small id="iface">—</small></div>
@@ -46,19 +46,19 @@ td,th{text-align:left;padding:10px;border-bottom:1px solid #263a55;font-size:13p
 
 <div class="card">
 <div class="row"><h2>Movement experiment recorder</h2><span class="status" id="expStatus">No active experiment</span></div>
-<p class="note">Record labelled test periods while the router and MacBook remain stationary. Zone labels are entered by you for controlled experiments; they are not inferred from Wi-Fi.</p>
+<p class="note">Keep the MacBook and access point fixed. Record an <b>Empty room baseline</b>, then change the condition to <b>Person walking</b> and repeat crossings. Labels are supplied by you; Wi-Fi does not identify who or what moved. Measurements are from the MacBook-to-access-point link only.</p>
 <div class="grid">
 <div><div class="label">Test zone</div><input id="expZone" value="Zone A" maxlength="40" style="width:100%;padding:10px;background:#0a1626;color:#e6eefb;border:1px solid #263a55;border-radius:8px"></div>
-<div><div class="label">Movement condition</div><select id="expPhase" style="width:100%;padding:10px;background:#0a1626;color:#e6eefb;border:1px solid #263a55;border-radius:8px"><option value="empty">Empty room baseline</option><option value="standing">Person standing</option><option value="walking">Person walking</option><option value="object_moving">Other object moving</option></select></div>
+<div><div class="label">Movement condition</div><select id="expPhase" style="width:100%;padding:10px;background:#0a1626;color:#e6eefb;border:1px solid #263a55;border-radius:8px"><option value="empty">Empty room baseline</option><option value="standing">Person standing (label only)</option><option value="walking">Person walking / crossing (label only)</option><option value="object_moving">Other object moving (label only)</option></select></div>
 <div><div class="label">Trial label (optional)</div><input id="expLabel" placeholder="e.g. trial 1" maxlength="100" style="width:100%;padding:10px;background:#0a1626;color:#e6eefb;border:1px solid #263a55;border-radius:8px"></div>
 </div>
 <div class="row"><div><button id="expStart" onclick="startExperiment()">Start recording</button> <button id="expUpdate" onclick="updateExperiment()" disabled>Apply zone / condition</button> <button id="expStop" onclick="stopExperiment()" disabled>Stop recording</button></div><small id="expCount">0 recorded samples</small></div>
-<h3>Current session comparison</h3><div style="overflow-x:auto"><table><thead><tr><th>Zone</th><th>Condition</th><th>Samples</th><th>Average RSSI</th><th>Min / max</th><th>RSSI range</th><th>Avg variation</th></tr></thead><tbody id="expRows"><tr><td colspan="7">Start a session to collect experiment data.</td></tr></tbody></table></div>
-<p class="note">A useful first trial: record 2 minutes empty, then 30–60 seconds standing and walking in each manually labelled zone. Repeat each condition several times. The output is a comparison of signal patterns, not proof of a person or an exact distance.</p>
+<h3>Current session comparison</h3><div style="overflow-x:auto"><table><thead><tr><th>Zone</th><th>Condition</th><th>Samples</th><th>Average RSSI</th><th>Min / max</th><th>RSSI range</th><th>Avg variation</th><th>Shift vs empty baseline</th></tr></thead><tbody id="expRows"><tr><td colspan="8">Start a session to collect experiment data.</td></tr></tbody></table></div>
+<p class="note">Suggested protocol: record 2 minutes empty, then 10 walking crossings with the devices fixed, then repeat the empty baseline. Compare the average RSSI shift and signal range. Repeat the full sequence at least 3 times. A difference is evidence of a repeatable radio disturbance only—not proof of a human crossing.</p>
 </div>
 <div class="card">
-<div class="row"><h2>Quick signal-change test (MacBook RSSI)</h2><span class="status" id="senseStatus">Not calibrated</span></div>
-<p class="note">This quick test calibrates the signal currently received by the MacBook, then flags sufficiently large RSSI changes. It is useful for checking whether movement affects this receiver's signal, but it does NOT detect every object anywhere in the router's coverage area and does NOT identify objects.</p>
+<div class="row"><h2>Signal disturbance monitor (MacBook RSSI only)</h2><span class="status" id="senseStatus">Not calibrated</span></div>
+<p class="note">This monitor compares current MacBook RSSI with an empty-area reference and flags threshold changes. A flag means only that the received signal changed; it cannot tell whether a person, object, interference, or normal radio fluctuation caused it.</p>
 <div class="grid" style="margin-bottom:10px">
 <div><div class="label">Empty-area baseline</div><div class="value" id="senseBaseline" style="font-size:21px">—</div></div>
 <div><div class="label">Current change</div><div class="value" id="senseDelta" style="font-size:21px">—</div></div>
@@ -246,7 +246,11 @@ async function refreshExperiment(){
   el('expStatus').textContent=status.active?'Recording · '+status.zone+' · '+status.phase:'No active experiment';
   el('expStart').disabled=!!status.active;el('expUpdate').disabled=!status.active;el('expStop').disabled=!status.active;
   const total=summary.groups.reduce((n,g)=>n+g.samples,0);el('expCount').textContent=total+' recorded samples';
-  el('expRows').innerHTML=summary.groups.length?summary.groups.map(g=>'<tr><td>'+safeText(g.zone)+'</td><td>'+safeText(g.phase)+'</td><td>'+g.samples+'</td><td>'+(g.avg_rssi??'—')+' dBm</td><td>'+(g.min_rssi??'—')+' / '+(g.max_rssi??'—')+'</td><td>'+(g.rssi_range??'—')+' dB</td><td>'+(g.avg_variation??'—')+' dB</td></tr>').join(''):'<tr><td colspan="7">No samples recorded yet.</td></tr>';
+  const emptyByZone=Object.fromEntries(summary.groups.filter(g=>g.phase==='empty').map(g=>[g.zone,g.avg_rssi]));
+  el('expRows').innerHTML=summary.groups.length?summary.groups.map(g=>{
+   const baseline=emptyByZone[g.zone],shift=baseline===undefined||g.avg_rssi===null?'—':(g.avg_rssi-baseline>=0?'+':'')+(g.avg_rssi-baseline).toFixed(2)+' dB';
+   return '<tr><td>'+safeText(g.zone)+'</td><td>'+safeText(g.phase)+'</td><td>'+g.samples+'</td><td>'+(g.avg_rssi??'—')+' dBm</td><td>'+(g.min_rssi??'—')+' / '+(g.max_rssi??'—')+'</td><td>'+(g.rssi_range??'—')+' dB</td><td>'+(g.avg_variation??'—')+' dB</td><td>'+shift+'</td></tr>';
+  }).join(''):'<tr><td colspan="8">No samples recorded yet.</td></tr>';
  }catch(e){console.error(e);}
 }
 function safeText(value){return String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
