@@ -87,7 +87,7 @@ td,th{text-align:left;padding:10px;border-bottom:1px solid #263a55;font-size:13p
 </div>
 <div class="card" id="csiPanel">
  <div class="row"><h2>Live CSI receiver · real radio measurements</h2><span class="status" id="csiConnection">Waiting for receiver</span></div>
- <p class="note">CSI amplitude vectors arrive from the ESP32-S3 over Wi-Fi. MacBook RSSI is never substituted for CSI. A CSI change is a movement/presence candidate, not proof of a human or identity.</p>
+ <p class="note">CSI amplitude vectors arrive from the ESP32-S3 over Wi-Fi. MacBook RSSI is never substituted for CSI. A candidate is raised only after CSI deviation persists for at least 5 seconds, then cleared after 5 seconds back near baseline. This filters brief spikes; it does not prove a human or identity.</p>
  <div class="grid">
   <div><div class="label">Receiver</div><div class="value" id="csiDevice" style="font-size:19px">Not connected</div><small id="csiSeen">No real CSI packets received</small></div>
   <div><div class="label">CSI subcarriers</div><div class="value" id="csiSubs">—</div><small>From last real packet</small></div>
