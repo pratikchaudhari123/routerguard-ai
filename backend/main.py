@@ -5,6 +5,7 @@ import sqlite3
 import json
 import statistics
 import subprocess
+import uuid
 from collections import deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -29,6 +30,7 @@ state = {"connected": False, "ssid": None, "interface": None, "rssi": None,
 samples = deque(maxlen=90)
 csi_windows = {}
 csi_state = {"receiver_connected": False, "device_id": None, "last_seen": None, "subcarriers": 0, "motion_score": None, "motion": "Waiting for CSI receiver", "calibrated": False}
+experiment_state = {"active": False, "session_id": None, "label": None, "zone": None, "phase": None, "started_at": None}
 
 def run_cmd(args, timeout=4):
     try:
@@ -166,6 +168,10 @@ def init_db():
         for column, kind in migrations.items():
             if column not in existing:
                 c.execute(f"ALTER TABLE samples ADD COLUMN {column} {kind}")
+        c.execute("""CREATE TABLE IF NOT EXISTS experiment_samples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
+            timestamp TEXT NOT NULL, phase TEXT NOT NULL, zone TEXT NOT NULL,
+            label TEXT, rssi INTEGER, noise INTEGER, variation REAL)""")
         c.execute("""CREATE TABLE IF NOT EXISTS csi_samples (
             id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL,
             device_id TEXT NOT NULL, rssi INTEGER, amplitudes_json TEXT NOT NULL,
@@ -196,6 +202,14 @@ def take_sample():
     with lock:
         state.update(result)
         state["history"] = list(samples)
+    with lock:
+        exp = dict(experiment_state)
+    if exp["active"] and rssi is not None:
+        with sqlite3.connect(DB_PATH) as c:
+            c.execute("""INSERT INTO experiment_samples(session_id,timestamp,phase,zone,label,rssi,noise,variation)
+                         VALUES(?,?,?,?,?,?,?,?)""",
+                      (exp["session_id"], timestamp, exp["phase"], exp["zone"], exp["label"],
+                       rssi, reading["noise"], variation))
     with sqlite3.connect(DB_PATH) as c:
         c.execute("""INSERT INTO samples(timestamp,ssid,interface,rssi,noise,channel,variation,activity,
                      band,channel_width_mhz,tx_rate_mbps,cca_percent,phy_mode,sniffer_supported)
@@ -278,6 +292,63 @@ def receive_csi(packet: CSIPacket):
 def csi_status():
     with lock:
         return dict(csi_state)
+
+class ExperimentStart(BaseModel):
+    zone: str = Field(min_length=1, max_length=40)
+    phase: str = Field(pattern="^(empty|standing|walking|object_moving)$")
+    label: str | None = Field(default=None, max_length=100)
+
+class ExperimentPhase(BaseModel):
+    zone: str = Field(min_length=1, max_length=40)
+    phase: str = Field(pattern="^(empty|standing|walking|object_moving)$")
+    label: str | None = Field(default=None, max_length=100)
+
+@app.post("/api/experiment/start")
+def start_experiment(payload: ExperimentStart):
+    with lock:
+        if experiment_state["active"]:
+            raise HTTPException(status_code=409, detail="An experiment is already active")
+        experiment_state.update({"active": True, "session_id": str(uuid.uuid4()),
+                                 "label": payload.label, "zone": payload.zone,
+                                 "phase": payload.phase,
+                                 "started_at": datetime.now(timezone.utc).isoformat()})
+        return dict(experiment_state)
+
+@app.post("/api/experiment/phase")
+def set_experiment_phase(payload: ExperimentPhase):
+    with lock:
+        if not experiment_state["active"]:
+            raise HTTPException(status_code=409, detail="Start an experiment first")
+        experiment_state.update({"zone": payload.zone, "phase": payload.phase, "label": payload.label})
+        return dict(experiment_state)
+
+@app.post("/api/experiment/stop")
+def stop_experiment():
+    with lock:
+        session_id = experiment_state["session_id"]
+        experiment_state.update({"active": False})
+        return {"ok": True, "session_id": session_id}
+
+@app.get("/api/experiment/status")
+def experiment_status():
+    with lock:
+        return dict(experiment_state)
+
+@app.get("/api/experiment/summary")
+def experiment_summary():
+    with lock:
+        session_id = experiment_state["session_id"]
+    if not session_id:
+        return {"session_id": None, "groups": []}
+    with sqlite3.connect(DB_PATH) as c:
+        c.row_factory = sqlite3.Row
+        rows = c.execute("""SELECT phase,zone,COUNT(*) AS samples,ROUND(AVG(rssi),2) AS avg_rssi,
+            MIN(rssi) AS min_rssi,MAX(rssi) AS max_rssi,ROUND(MAX(rssi)-MIN(rssi),2) AS rssi_range,
+            ROUND(AVG(variation),2) AS avg_variation
+            FROM experiment_samples WHERE session_id=? GROUP BY phase,zone ORDER BY zone,phase""",
+            (session_id,)).fetchall()
+    return {"session_id": session_id, "groups": [dict(r) for r in rows],
+            "note": "Descriptive RSSI statistics only; not validated person detection or distance estimation."}
 
 @app.get("/health")
 def health():
