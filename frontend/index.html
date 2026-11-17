@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RouterGuard AI</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,system-ui,sans-serif;background:#0b1220;color:#e5edf8}
+body{margin:0;padding:28px;max-width:1200px;margin:auto}h1{margin:0;font-size:28px}.sub{color:#8ea2bd;margin:8px 0 24px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}.card{background:#131f32;border:1px solid #253650;border-radius:12px;padding:18px;margin-bottom:14px}
+.label{font-size:12px;color:#91a6c2;text-transform:uppercase;letter-spacing:.08em}.value{font-size:24px;font-weight:700;margin-top:8px}
+.online{color:#4ade80}.bad{color:#fbbf24}.muted{color:#91a6c2}
+table{width:100%;border-collapse:collapse;margin-top:12px;font-size:14px}th,td{text-align:left;padding:10px;border-bottom:1px solid #293951}th{color:#91a6c2}
+button{background:#2563eb;color:white;border:0;padding:10px 14px;border-radius:8px;cursor:pointer}button:hover{background:#1d4ed8}
+.pill{padding:4px 8px;border-radius:20px;background:#24334b}.warning{color:#fbbf24}.error{color:#fb7185}
+small{color:#91a6c2}.row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+</style></head>
+<body>
+<div class="row"><div><h1>RouterGuard AI</h1><div class="sub">Two-router network security monitor · Read-only MVP</div></div><button onclick="scanNow()">Run scan now</button></div>
+<div class="grid">
+ <div class="card"><div class="label">Routers configured</div><div class="value" id="routerCount">—</div></div>
+ <div class="card"><div class="label">Routers responding</div><div class="value online" id="onlineCount">—</div></div>
+ <div class="card"><div class="label">Visible LAN devices</div><div class="value" id="deviceCount">—</div></div>
+ <div class="card"><div class="label">Unapproved devices</div><div class="value bad" id="unknownCount">—</div></div>
+</div>
+<div class="card"><div class="row"><h2>Router health</h2><small id="updated">Waiting for first scan…</small></div><div id="routers" class="grid"></div></div>
+<div class="card"><h2>Visible network devices</h2><small>Device visibility depends on the Mac's ARP cache and network isolation settings.</small><table><thead><tr><th>IP</th><th>MAC address</th><th>Classification</th><th>Action</th></tr></thead><tbody id="devices"></tbody></table></div>
+<div class="card"><h2>Security event timeline</h2><table><thead><tr><th>Time</th><th>Severity</th><th>Source</th><th>Event</th></tr></thead><tbody id="events"></tbody></table></div>
+<p><small>Unknown means not yet approved, not confirmed malicious. Router ping failure may mean ICMP is blocked. This tool does not prove absence or presence of a breach.</small></p>
+<script>
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+async function refresh(){
+ try{
+  const s=await (await fetch('/api/status')).json();
+  const configured=s.routers.filter(r=>r.status!=='not_configured').length;
+  const online=s.routers.filter(r=>r.status==='online').length;
+  const unknown=s.devices.filter(d=>!d.known).length;
+  document.getElementById('routerCount').textContent=configured;
+  document.getElementById('onlineCount').textContent=online;
+  document.getElementById('deviceCount').textContent=s.devices.length;
+  document.getElementById('unknownCount').textContent=unknown;
+  document.getElementById('updated').textContent=s.timestamp?'Last scan: '+new Date(s.timestamp).toLocaleString():'Waiting for first scan…';
+  document.getElementById('routers').innerHTML=s.routers.map(r=>'<div class="card"><div class="label">'+esc(r.name)+'</div><div class="value '+(r.status==='online'?'online':'bad')+'">'+esc(r.status)+'</div><p>'+esc(r.ip||'IP not configured')+'</p><small>Ping: '+(r.ping?'responding':'no response')+' · Open TCP ports: '+esc((r.open_ports||[]).join(', ')||'none detected')+'</small></div>').join('');
+  document.getElementById('devices').innerHTML=s.devices.map(d=>'<tr><td>'+esc(d.ip)+'</td><td>'+esc(d.mac)+'</td><td><span class="pill '+(d.known?'online':'warning')+'">'+(d.known?'Approved':'Unapproved / new')+'</span></td><td>'+(d.known?'—':'<button onclick="approve(\''+esc(d.mac)+'\')">Approve</button>')+'</td></tr>').join('')||'<tr><td colspan="4">No ARP neighbors currently visible. Generate network traffic or inspect router client lists.</td></tr>';
+  const e=await (await fetch('/api/events?limit=40')).json();
+  document.getElementById('events').innerHTML=e.map(x=>'<tr><td>'+esc(x.timestamp)+'</td><td class="'+(x.severity==='error'?'error':'warning')+'">'+esc(x.severity)+'</td><td>'+esc(x.source)+'</td><td>'+esc(x.message)+'</td></tr>').join('')||'<tr><td colspan="4">No events yet.</td></tr>';
+ }catch(e){console.error(e)}
+}
+async function scanNow(){await fetch('/api/scan',{method:'POST'});await refresh()}
+async function approve(mac){await fetch('/api/devices/'+encodeURIComponent(mac)+'/approve',{method:'POST'});await refresh()}
+refresh();setInterval(refresh,5000);
+</script></body></html>
