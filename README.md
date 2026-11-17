@@ -47,3 +47,49 @@ Research-grade Wi-Fi sensing generally uses CSI (Channel State Information), whi
 
 ## Data and privacy
 Samples are stored locally in `data/wifisense.db`. The app does not scan other devices, capture payloads, deauthenticate clients, or change router settings.
+
+
+## Device-free motion sensing (CSI development branch)
+
+This branch adds the first backend receiver interface for a compatible CSI device.
+
+### Architecture
+
+- Existing JioFiber router: ordinary Wi-Fi transmitter / access point.
+- ESP32 CSI receiver: captures channel-state measurements from received Wi-Fi packets.
+- MacBook: runs this FastAPI service, stores measurements in SQLite, and hosts the dashboard.
+- Future processing stage: calibrated signal processing, movement events, and multi-receiver zone estimation.
+
+Official reference implementation and firmware examples:
+- Espressif ESP-CSI: https://github.com/espressif/esp-csi
+- ESP-CSI programming guide: https://documentation.espressif.com/esp-csi/master/README.md
+
+Espressif documents a router-as-transmitter setup in which an ESP32 sends ping traffic and captures CSI from router replies. Whether this works depends on the access point's Wi-Fi configuration and compatibility. One receiver can provide experimental motion detection; reliable room/zone localization generally needs additional spatially separated receivers and calibration.
+
+### CSI ingestion API
+
+POST JSON packets to `/api/csi`:
+
+```json
+{
+  "device_id": "esp32-csi-01",
+  "rssi": -54,
+  "amplitudes": [12.1, 13.4, 11.8, 14.0, 12.7, 13.1, 11.9, 12.8]
+}
+```
+
+The current endpoint is an integration scaffold. It accepts amplitude vectors, stores them, and emits an experimental change score after 20 baseline packets. The threshold and feature calculation are placeholders for bench testing, not a validated detector. Do not interpret the score as proof of a person/object or as a position estimate. The ESP32 firmware's native CSI output must be parsed into the API's amplitude-vector format before connecting it.
+
+Check receiver status at `GET /api/csi/status`.
+
+### Calibration protocol (first experiment)
+
+1. Place router and receiver in fixed positions, with the receiver in the target room.
+2. Keep the room empty and still while collecting baseline packets.
+3. Walk through the intended sensing area, then repeat with a pet or moving object.
+4. Record multiple trials and compare signal features against the empty baseline.
+5. Only after repeatable results should zone labels and a trained classifier be added.
+
+### Hardware and accuracy boundaries
+
+The current MacBook RSSI collector is retained as a diagnostic only; it is not CSI and cannot provide exact object coordinates. The ESP32 CSI receiver is the next required sensing component unless another compatible CSI-capable receiver is available. A single link can detect channel changes but generally cannot uniquely determine where within a room the movement occurred. Multi-zone localization requires multiple links/receivers, spatial calibration, and validation against false alarms.
