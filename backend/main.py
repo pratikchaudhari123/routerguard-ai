@@ -16,6 +16,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
+from backend.router_diagnostics import router_diagnostics
 
 DB_PATH = Path("data/wifisense.db")
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -581,6 +582,12 @@ def experiment_summary():
 @app.get("/health")
 def health():
     return {"ok": True, "service": "WiFiSense"}
+
+@app.get("/api/router-diagnostics")
+def router_diagnostics_status():
+    """Read-only checks of the configured Jio and TP-Link router addresses."""
+    return router_diagnostics()
+
 
 @app.get("/api/status")
 def status():
