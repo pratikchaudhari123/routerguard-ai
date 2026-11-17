@@ -53,6 +53,7 @@ def human_detector_reset():
     human_calibration_vectors = []
     human_baseline_mean = []
     human_baseline_std = []
+    human_detection["events"].clear()
     human_detection.update({
         "calibration_active": False, "calibrated": False, "enabled": False,
         "device_id": None, "packets_seen": 0, "baseline_packets": 0,
@@ -411,6 +412,8 @@ def receive_csi(packet: CSIPacket):
     now = datetime.now(timezone.utc).isoformat()
     values = packet.amplitudes
 
+    if not all(abs(v) < 1e7 for v in values):
+        raise HTTPException(status_code=422, detail="CSI amplitudes contain invalid values")
     human_result = human_detector_ingest(packet.device_id, values, now)
     if human_result.get("calibrated"):
         with sqlite3.connect(DB_PATH) as c:
@@ -419,8 +422,6 @@ def receive_csi(packet: CSIPacket):
                       (now, packet.device_id, human_result["status"],
                        human_result.get("score"), human_result.get("changed_fraction"),
                        int(human_result.get("presence_candidate", False))))
-    if not all(abs(v) < 1e7 for v in values):
-        raise HTTPException(status_code=422, detail="CSI amplitudes contain invalid values")
     baseline = csi_windows.setdefault(packet.device_id, deque(maxlen=150))
     vector_mean = statistics.fmean(values)
     vector_spread = statistics.pstdev(values)
