@@ -30,6 +30,134 @@ state = {"connected": False, "ssid": None, "interface": None, "rssi": None,
 samples = deque(maxlen=90)
 csi_windows = {}
 csi_state = {"receiver_connected": False, "device_id": None, "last_seen": None, "subcarriers": 0, "motion_score": None, "motion": "Waiting for CSI receiver", "calibrated": False}
+
+# CSI-only device-free presence candidate detector.
+# It compares REAL incoming CSI amplitude vectors against an explicitly collected
+# empty-room baseline. It never uses MacBook RSSI as CSI and never fabricates packets.
+human_detection = {
+    "calibration_active": False, "calibrated": False, "enabled": False,
+    "device_id": None, "packets_seen": 0, "baseline_packets": 0,
+    "required_baseline_packets": 60, "status": "Waiting for a real CSI receiver",
+    "presence_candidate": False, "score": None, "changed_fraction": None,
+    "last_seen": None, "events": deque(maxlen=50), "high_count": 0, "low_count": 0
+}
+human_calibration_vectors = []
+human_baseline_mean = []
+human_baseline_std = []
+HUMAN_Z_THRESHOLD = 3.0
+HUMAN_SCORE_THRESHOLD = 2.5
+HUMAN_CHANGED_FRACTION_THRESHOLD = 0.25
+
+def human_detector_reset():
+    global human_calibration_vectors, human_baseline_mean, human_baseline_std
+    human_calibration_vectors = []
+    human_baseline_mean = []
+    human_baseline_std = []
+    human_detection.update({
+        "calibration_active": False, "calibrated": False, "enabled": False,
+        "device_id": None, "packets_seen": 0, "baseline_packets": 0,
+        "status": "Waiting for a real CSI receiver", "presence_candidate": False,
+        "score": None, "changed_fraction": None, "last_seen": None,
+        "high_count": 0, "low_count": 0
+    })
+
+def human_detector_ingest(device_id, values, timestamp):
+    global human_calibration_vectors, human_baseline_mean, human_baseline_std
+    if human_detection["calibration_active"]:
+        if human_detection["device_id"] not in (None, device_id):
+            return {"status": human_detection["status"], "presence_candidate": False,
+                    "score": None, "calibrated": False}
+        human_detection["device_id"] = device_id
+        if human_calibration_vectors and len(values) != len(human_calibration_vectors[0]):
+            human_detection["status"] = "CSI vector length changed; reset calibration"
+            human_detection["calibration_active"] = False
+            return {"status": human_detection["status"], "presence_candidate": False,
+                    "score": None, "calibrated": False}
+        human_calibration_vectors.append(list(values))
+        human_detection["baseline_packets"] = len(human_calibration_vectors)
+        human_detection["packets_seen"] += 1
+        if len(human_calibration_vectors) >= human_detection["required_baseline_packets"]:
+            count = len(human_calibration_vectors)
+            width = len(human_calibration_vectors[0])
+            human_baseline_mean = [
+                statistics.fmean(row[i] for row in human_calibration_vectors)
+                for i in range(width)
+            ]
+            human_baseline_std = [
+                max(statistics.pstdev(row[i] for row in human_calibration_vectors), 0.5)
+                for i in range(width)
+            ]
+            human_detection.update({
+                "calibration_active": False, "calibrated": True, "enabled": True,
+                "status": "Empty-room baseline ready — monitoring CSI changes",
+                "presence_candidate": False, "high_count": 0, "low_count": 0
+            })
+        else:
+            human_detection["status"] = (
+                f"Collecting empty-room baseline: {len(human_calibration_vectors)}/"
+                f"{human_detection['required_baseline_packets']} real CSI packets"
+            )
+        human_detection["last_seen"] = timestamp
+        return {"status": human_detection["status"], "presence_candidate": False,
+                "score": None, "calibrated": human_detection["calibrated"]}
+
+    if not human_detection["calibrated"] or not human_detection["enabled"]:
+        return {"status": human_detection["status"], "presence_candidate": False,
+                "score": None, "calibrated": human_detection["calibrated"]}
+    if human_detection["device_id"] != device_id:
+        return {"status": "A different CSI receiver is active; recalibrate for this receiver",
+                "presence_candidate": False, "score": None, "calibrated": False}
+    if len(values) != len(human_baseline_mean):
+        human_detection.update({"enabled": False, "calibrated": False,
+                                "status": "CSI vector length changed; recalibration required"})
+        return {"status": human_detection["status"], "presence_candidate": False,
+                "score": None, "calibrated": False}
+
+    z_values = [
+        abs(value - mean) / std
+        for value, mean, std in zip(values, human_baseline_mean, human_baseline_std)
+    ]
+    score = round(statistics.fmean(min(z, 10.0) for z in z_values), 3)
+    changed_fraction = round(
+        sum(1 for z in z_values if z >= HUMAN_Z_THRESHOLD) / len(z_values), 3
+    )
+    changed = (score >= HUMAN_SCORE_THRESHOLD and
+               changed_fraction >= HUMAN_CHANGED_FRACTION_THRESHOLD)
+    human_detection["packets_seen"] += 1
+    human_detection["last_seen"] = timestamp
+    human_detection["score"] = score
+    human_detection["changed_fraction"] = changed_fraction
+    if changed:
+        human_detection["high_count"] += 1
+        human_detection["low_count"] = 0
+    else:
+        human_detection["low_count"] += 1
+        human_detection["high_count"] = 0
+
+    previous = human_detection["presence_candidate"]
+    if not previous and human_detection["high_count"] >= 3:
+        human_detection["presence_candidate"] = True
+        human_detection["status"] = "Possible human presence / movement — CSI change sustained"
+    elif previous and human_detection["low_count"] >= 10:
+        human_detection["presence_candidate"] = False
+        human_detection["status"] = "No sustained CSI change observed"
+    elif previous:
+        human_detection["status"] = "Possible human presence / movement — CSI change sustained"
+    else:
+        human_detection["status"] = "No sustained CSI change observed"
+
+    current = human_detection["presence_candidate"]
+    if current != previous:
+        human_detection["events"].appendleft({
+            "timestamp": timestamp, "status": human_detection["status"],
+            "score": score, "changed_fraction": changed_fraction,
+            "source": "real CSI amplitudes", "device_id": device_id
+        })
+    return {"status": human_detection["status"], "presence_candidate": current,
+            "score": score, "changed_fraction": changed_fraction,
+            "calibrated": True}
+
+
 experiment_state = {"active": False, "session_id": None, "label": None, "zone": None, "phase": None, "started_at": None}
 
 # RSSI-only exploratory monitor. It measures changes at the MacBook receiver,
@@ -178,6 +306,10 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
             timestamp TEXT NOT NULL, phase TEXT NOT NULL, zone TEXT NOT NULL,
             label TEXT, rssi INTEGER, noise INTEGER, variation REAL)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS human_detection_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL,
+            device_id TEXT NOT NULL, status TEXT NOT NULL, score REAL,
+            changed_fraction REAL, presence_candidate INTEGER NOT NULL)""")
         c.execute("""CREATE TABLE IF NOT EXISTS csi_samples (
             id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL,
             device_id TEXT NOT NULL, rssi INTEGER, amplitudes_json TEXT NOT NULL,
@@ -278,6 +410,15 @@ def receive_csi(packet: CSIPacket):
     """Receive CSI subcarrier amplitudes from a compatible ESP32 receiver."""
     now = datetime.now(timezone.utc).isoformat()
     values = packet.amplitudes
+
+    human_result = human_detector_ingest(packet.device_id, values, now)
+    if human_result.get("calibrated"):
+        with sqlite3.connect(DB_PATH) as c:
+            c.execute("""INSERT INTO human_detection_events(timestamp,device_id,status,score,
+                         changed_fraction,presence_candidate) VALUES(?,?,?,?,?,?)""",
+                      (now, packet.device_id, human_result["status"],
+                       human_result.get("score"), human_result.get("changed_fraction"),
+                       int(human_result.get("presence_candidate", False))))
     if not all(abs(v) < 1e7 for v in values):
         raise HTTPException(status_code=422, detail="CSI amplitudes contain invalid values")
     baseline = csi_windows.setdefault(packet.device_id, deque(maxlen=150))
@@ -307,7 +448,36 @@ def receive_csi(packet: CSIPacket):
     return {"ok": True, "timestamp": now, "device_id": packet.device_id,
             "subcarriers": len(values), "motion_score": score, "motion": motion,
             "calibrated": len(baseline) >= 20,
-            "note": "Experimental signal-change detector; not object identification or precise localization."}
+            "human_detection": human_result,
+            "note": "Human-presence candidate is inferred only from real CSI packets after empty-room calibration. It is experimental, can false-trigger on non-human changes, and is not a validated human classifier."}
+
+
+@app.post("/api/human-detection/calibrate")
+def human_detection_calibrate():
+    human_detector_reset()
+    human_detection["calibration_active"] = True
+    human_detection["status"] = (
+        "Calibration started — keep the monitored area empty and still; "
+        "waiting for 60 real CSI packets"
+    )
+    return human_detection_status()
+
+@app.post("/api/human-detection/stop")
+def human_detection_stop():
+    human_detection["enabled"] = False
+    human_detection["calibration_active"] = False
+    human_detection["status"] = "Human-presence candidate monitoring stopped"
+    return human_detection_status()
+
+@app.get("/api/human-detection/status")
+def human_detection_status():
+    return {
+        **{k: v for k, v in human_detection.items() if k != "events"},
+        "events": list(human_detection["events"]),
+        "measurement_source": "CSI amplitude vectors received from configured CSI receiver",
+        "rssi_used_for_human_detection": False,
+        "interpretation": "Possible presence/movement candidate only; not a validated human-vs-object classifier."
+    }
 
 @app.get("/api/sensing/status")
 def sensing_status():
