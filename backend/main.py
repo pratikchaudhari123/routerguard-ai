@@ -429,5 +429,87 @@ def sample():
     return take_sample()
 
 
+@app.get("/api/diagnostics")
+def diagnostics():
+    """Report collector and database health; never infer person presence."""
+    now = datetime.now(timezone.utc)
+    with sqlite3.connect(DB_PATH) as c:
+        c.row_factory = sqlite3.Row
+        total = c.execute("SELECT COUNT(*) AS n FROM samples").fetchone()["n"]
+        recent = c.execute(
+            "SELECT timestamp,rssi FROM samples ORDER BY id DESC LIMIT 31"
+        ).fetchall()
+        exp = dict(experiment_state)
+        exp_count = 0
+        if exp["session_id"]:
+            exp_count = c.execute(
+                "SELECT COUNT(*) FROM experiment_samples WHERE session_id=?",
+                (exp["session_id"],)
+            ).fetchone()[0]
+    last_timestamp = recent[0]["timestamp"] if recent else None
+    age_seconds = None
+    if last_timestamp:
+        try:
+            age_seconds = round((now - datetime.fromisoformat(last_timestamp)).total_seconds(), 1)
+        except ValueError:
+            pass
+    recent_times = []
+    for row in recent:
+        try:
+            recent_times.append(datetime.fromisoformat(row["timestamp"]))
+        except ValueError:
+            continue
+    recent_times.sort()
+    intervals = [
+        (recent_times[i] - recent_times[i-1]).total_seconds()
+        for i in range(1, len(recent_times))
+    ]
+    avg_interval = round(statistics.fmean(intervals), 2) if intervals else None
+    return {
+        "ok": bool(last_timestamp and age_seconds is not None and age_seconds <= 8),
+        "collector_interval_seconds_configured": INTERVAL,
+        "average_interval_seconds_recent": avg_interval,
+        "samples_in_last_60_seconds": sum(
+            1 for row in recent_times if (now-row).total_seconds() <= 60
+        ),
+        "expected_samples_per_minute_approx": round(60 / INTERVAL),
+        "database_total_samples": total,
+        "last_sample_at": last_timestamp,
+        "last_sample_age_seconds": age_seconds,
+        "latest_rssi": recent[0]["rssi"] if recent else None,
+        "experiment_active": exp["active"],
+        "experiment_session_id": exp["session_id"],
+        "experiment_samples_current_session": exp_count,
+        "warning": "Collector health and RSSI sampling only; this endpoint does not verify human/object detection."
+    }
+
+
+@app.get("/api/experiment/export.csv")
+def export_experiment_csv():
+    from csv import writer
+    from io import StringIO
+    with lock:
+        session_id = experiment_state["session_id"]
+    if not session_id:
+        raise HTTPException(status_code=404, detail="No experiment session is available to export.")
+    with sqlite3.connect(DB_PATH) as c:
+        rows = c.execute(
+            """SELECT timestamp,zone,phase,label,rssi,noise,variation
+               FROM experiment_samples WHERE session_id=? ORDER BY id""",
+            (session_id,)
+        ).fetchall()
+    if not rows:
+        raise HTTPException(status_code=404, detail="No samples recorded in the current session.")
+    output = StringIO()
+    csv_writer = writer(output)
+    csv_writer.writerow(["timestamp_utc","zone","condition","trial_label","rssi_dbm","noise_dbm","rolling_rssi_range_db"])
+    csv_writer.writerows(rows)
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="wifisense-experiment-{session_id}.csv"'}
+    )
+
+
 from backend.localization import router as localization_router
 app.include_router(localization_router)
