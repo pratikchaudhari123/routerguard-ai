@@ -511,5 +511,47 @@ def export_experiment_csv():
     )
 
 
+class CoveragePoint(BaseModel):
+    x: float = Field(ge=0, le=1000)
+    y: float = Field(ge=0, le=1000)
+    room_width: float = Field(gt=0, le=1000)
+    room_height: float = Field(gt=0, le=1000)
+    zone: str | None = Field(default=None, max_length=40)
+
+
+@app.post("/api/coverage/point")
+def record_coverage_point(payload: CoveragePoint):
+    with lock:
+        reading = dict(state)
+    if reading.get("rssi") is None:
+        raise HTTPException(status_code=409, detail="No valid MacBook RSSI reading is available right now.")
+    if payload.x > payload.room_width or payload.y > payload.room_height:
+        raise HTTPException(status_code=422, detail="Survey point must be inside the room dimensions.")
+    timestamp = datetime.now(timezone.utc).isoformat()
+    with sqlite3.connect(DB_PATH) as c:
+        c.execute("""CREATE TABLE IF NOT EXISTS coverage_points (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL,
+            x REAL NOT NULL, y REAL NOT NULL, rssi INTEGER NOT NULL,
+            room_width REAL NOT NULL, room_height REAL NOT NULL, zone TEXT)""")
+        c.execute("""INSERT INTO coverage_points(timestamp,x,y,rssi,room_width,room_height,zone)
+                     VALUES(?,?,?,?,?,?,?)""",
+                  (timestamp,payload.x,payload.y,reading["rssi"],
+                   payload.room_width,payload.room_height,payload.zone))
+    return {"ok": True, "point": {"timestamp":timestamp,"x":payload.x,"y":payload.y,
+            "rssi":reading["rssi"],"zone":payload.zone},
+            "note":"RSSI measured at the MacBook at the time of recording; map interpolation is an estimate between surveyed points."}
+
+
+@app.get("/api/coverage/status")
+def coverage_status():
+    with sqlite3.connect(DB_PATH) as c:
+        c.row_factory = sqlite3.Row
+        exists = c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='coverage_points'").fetchone()
+        rows = c.execute("SELECT * FROM coverage_points ORDER BY id").fetchall() if exists else []
+    return {"points":[dict(row) for row in rows],
+            "count":len(rows),
+            "warning":"Only manually surveyed points contain measured RSSI. Colours between points are interpolation, not directly measured radio coverage."}
+
+
 from backend.localization import router as localization_router
 app.include_router(localization_router)
