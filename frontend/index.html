@@ -285,7 +285,6 @@ async function refreshReceiverPairing(){
 }
 async function refreshCSI(){
  try{
-  await refreshReceiverPairing();
   const [d,h]=await Promise.all([
    fetch('/api/csi/status').then(r=>r.json()),
    fetch('/api/human-detection/status').then(r=>r.json())
@@ -295,10 +294,8 @@ async function refreshCSI(){
   el('csiMotion').textContent=d.motion||'Waiting for CSI';
   el('csiScore').textContent=d.motion_score===null?'—':d.motion_score;
   el('csiSubs').textContent=d.subcarriers||'—';
-  el('csiCal').textContent=d.calibrated?'Baseline ready':'Collecting baseline';
   el('csiSeen').textContent=d.last_seen?'Last CSI packet: '+new Date(d.last_seen).toLocaleTimeString():'No CSI packets received yet.';
   el('humanStatus').textContent=h.status||'Waiting for CSI';
-  el('humanScore').textContent=h.score===null?'—':h.score;
   el('humanChanged').textContent=h.changed_fraction===null?'—':Math.round(h.changed_fraction*100)+'%';
   el('humanCal').textContent=h.calibrated?'Baseline ready':(h.calibration_active?'Collecting empty-room baseline':'Not calibrated');
   el('csiBaselineCount').textContent=(h.baseline_packets||0)+' / '+(h.required_baseline_packets||60);
