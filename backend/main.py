@@ -32,6 +32,12 @@ csi_windows = {}
 csi_state = {"receiver_connected": False, "device_id": None, "last_seen": None, "subcarriers": 0, "motion_score": None, "motion": "Waiting for CSI receiver", "calibrated": False}
 experiment_state = {"active": False, "session_id": None, "label": None, "zone": None, "phase": None, "started_at": None}
 
+# RSSI-only exploratory monitor. It measures changes at the MacBook receiver,
+# not CSI, object identity, or whole-room coverage.
+rssi_sensing = {"enabled": False, "calibrated": False, "baseline_rssi": None,
+    "threshold_db": 4.0, "last_delta_db": None, "status": "Not calibrated",
+    "last_event_at": None, "events": deque(maxlen=30), "last_event_state": None}
+
 def run_cmd(args, timeout=4):
     try:
         p = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
@@ -203,6 +209,21 @@ def take_sample():
         state.update(result)
         state["history"] = list(samples)
     with lock:
+        if rssi_sensing["enabled"] and rssi_sensing["calibrated"] and rssi is not None:
+            delta = round(abs(rssi - rssi_sensing["baseline_rssi"]), 1)
+            changed = delta >= rssi_sensing["threshold_db"]
+            rssi_sensing["last_delta_db"] = delta
+            new_status = "Signal change observed near receiver" if changed else "Near baseline"
+            rssi_sensing["status"] = new_status
+            event_state = "change" if changed else "baseline"
+            if event_state != rssi_sensing["last_event_state"]:
+                rssi_sensing["events"].appendleft({
+                    "timestamp": timestamp, "status": new_status,
+                    "rssi": rssi, "delta_db": delta
+                })
+                rssi_sensing["last_event_at"] = timestamp
+                rssi_sensing["last_event_state"] = event_state
+    with lock:
         exp = dict(experiment_state)
     if exp["active"] and rssi is not None:
         with sqlite3.connect(DB_PATH) as c:
@@ -287,6 +308,42 @@ def receive_csi(packet: CSIPacket):
             "subcarriers": len(values), "motion_score": score, "motion": motion,
             "calibrated": len(baseline) >= 20,
             "note": "Experimental signal-change detector; not object identification or precise localization."}
+
+@app.get("/api/sensing/status")
+def sensing_status():
+    with lock:
+        return {**{k: v for k, v in rssi_sensing.items() if k != "events"},
+                "events": list(rssi_sensing["events"]),
+                "measurement": "MacBook RSSI only",
+                "scope_warning": "Changes are measured only at the MacBook receiver; this is not whole-room object detection."}
+
+@app.post("/api/sensing/calibrate")
+def sensing_calibrate():
+    values = [v for v in list(samples)[-30:] if isinstance(v, (int, float))]
+    if len(values) < 5:
+        raise HTTPException(status_code=409, detail="Need at least 5 RSSI samples. Wait 10 seconds and retry.")
+    baseline = statistics.fmean(values)
+    spread = statistics.pstdev(values) if len(values) > 1 else 0.0
+    threshold = round(max(4.0, spread * 3.0), 1)
+    with lock:
+        rssi_sensing.update({"enabled": True, "calibrated": True,
+            "baseline_rssi": round(baseline, 1), "threshold_db": threshold,
+            "last_delta_db": 0.0, "status": "Calibrated — monitoring signal changes",
+            "last_event_at": None, "last_event_state": "baseline"})
+        rssi_sensing["events"].clear()
+    return sensing_status()
+
+@app.post("/api/sensing/stop")
+def sensing_stop():
+    with lock:
+        rssi_sensing.update({"enabled": False, "status": "Monitoring stopped",
+                             "last_event_state": None})
+    return sensing_status()
+
+@app.get("/api/sensing/events")
+def sensing_events():
+    with lock:
+        return list(rssi_sensing["events"])
 
 @app.get("/api/csi/status")
 def csi_status():
