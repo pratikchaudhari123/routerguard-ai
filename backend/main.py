@@ -128,7 +128,18 @@ def init_db():
         c.execute("""CREATE TABLE IF NOT EXISTS samples (
             id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL,
             ssid TEXT, interface TEXT, rssi INTEGER, noise INTEGER,
-            channel INTEGER, variation REAL, activity TEXT)""")
+            channel INTEGER, variation REAL, activity TEXT,
+            band TEXT, channel_width_mhz INTEGER, tx_rate_mbps REAL,
+            cca_percent REAL, phy_mode TEXT, sniffer_supported INTEGER)""")
+        existing = {row[1] for row in c.execute("PRAGMA table_info(samples)")}
+        migrations = {
+            "band": "TEXT", "channel_width_mhz": "INTEGER",
+            "tx_rate_mbps": "REAL", "cca_percent": "REAL",
+            "phy_mode": "TEXT", "sniffer_supported": "INTEGER",
+        }
+        for column, kind in migrations.items():
+            if column not in existing:
+                c.execute(f"ALTER TABLE samples ADD COLUMN {column} {kind}")
 
 def take_sample():
     reading = read_wifi()
@@ -156,10 +167,14 @@ def take_sample():
         state.update(result)
         state["history"] = list(samples)
     with sqlite3.connect(DB_PATH) as c:
-        c.execute("""INSERT INTO samples(timestamp,ssid,interface,rssi,noise,channel,variation,activity)
-                     VALUES(?,?,?,?,?,?,?,?)""",
+        c.execute("""INSERT INTO samples(timestamp,ssid,interface,rssi,noise,channel,variation,activity,
+                     band,channel_width_mhz,tx_rate_mbps,cca_percent,phy_mode,sniffer_supported)
+                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                   (timestamp, reading["ssid"], reading["interface"], rssi,
-                   reading["noise"], reading["channel"], variation, activity))
+                   reading["noise"], reading["channel"], variation, activity,
+                   reading["band"], reading["channel_width_mhz"], reading["tx_rate_mbps"],
+                   reading["cca_percent"], reading["phy_mode"],
+                   None if reading["sniffer_supported"] is None else int(reading["sniffer_supported"])))
     return result
 
 async def sampler_loop():
