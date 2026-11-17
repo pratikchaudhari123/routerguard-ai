@@ -1,59 +1,49 @@
-# RouterGuard AI
+# WiFiSense
 
-Real-time, read-only security visibility for two routers and the LAN they serve.
+A local experimental Wi-Fi signal dashboard. It reads the Wi-Fi signal information exposed by the network interface your MacBook is currently using. You do not need to enter router IPs or connect a second router.
 
 ## What this MVP does
-- Checks configured router IPs for ICMP reachability and common TCP management/service ports.
-- Reads the macOS/Linux ARP neighbor table and inventories visible LAN devices.
-- Flags newly observed MAC addresses as **unknown** until you approve them.
-- Records router/device events in SQLite and serves a live dashboard/API.
-- Does not attempt exploitation, password guessing, packet interception, deauthentication, or configuration changes.
+- Detects the current Wi-Fi interface and connected SSID on macOS.
+- Samples RSSI (and noise/channel when the OS exposes them) every 2 seconds.
+- Shows a live signal graph and stores samples in SQLite.
+- Highlights unusually large RSSI changes as **possible activity**, not confirmed human presence.
 
-## Important topology note
-A Wi-Fi repeater/bridge often places both access points on one Layer-2 network. In that case, the client device list is usually shared, and a laptop cannot reliably attribute every device to a particular physical router. Configure each router's management IP if known. Router B can be marked unreachable if its management interface is isolated; that is not proof of compromise.
+## Run on your Mac (recommended)
 
-## Requirements
-- macOS or Linux
-- Python 3.10+
-- Your MacBook connected to your own Wi-Fi network
-- Router management IPs (often visible as the gateway in Network settings)
-
-## Run locally on macOS (recommended)
-Running natively gives the scanner access to the Mac's LAN and ARP table. Docker Desktop on macOS uses a VM network and may not see the LAN in the same way.
+Run natively rather than in Docker so the app can query macOS Wi-Fi diagnostics.
 
 ```bash
 git clone https://github.com/pratikchaudhari123/routerguard-ai.git
 cd routerguard-ai
 python3 -m venv .venv
 source .venv/bin/activate
+python -m pip install --upgrade pip
 pip install -r requirements.txt
-cp .env.example .env
-# Edit .env and set ROUTER_A_IP / ROUTER_B_IP
-uvicorn backend.main:app --host 127.0.0.1 --port 8000
+uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Open http://127.0.0.1:8000
+Open **http://127.0.0.1:8000**.
 
-## Configuration
-Edit `.env`:
-- `ROUTER_A_IP`: Jio router management IP
-- `ROUTER_B_IP`: repeater/bridge management IP
-- `SCAN_INTERVAL_SECONDS`: polling interval (minimum 10 seconds)
-- `KNOWN_MACS`: comma-separated MAC addresses you recognize, e.g. `AA:BB:CC:DD:EE:FF`
+If you already cloned the earlier version, update it first:
 
-Never put router passwords, API keys, or private credentials in Git.
+```bash
+git pull origin main
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+```
 
-## Docker
-`docker compose up --build` runs the dashboard in a container. On Docker Desktop for macOS, LAN/ARP visibility can be limited. For accurate local device discovery, use the native macOS instructions above. Docker is useful for API/UI testing and persistent SQLite storage.
+Stop the server with Ctrl+C.
 
-## API
-- `GET /api/status` — router and device snapshot
-- `GET /api/events?limit=100` — recent events
-- `POST /api/scan` — request an immediate scan
-- `GET /health` — health check
+## Signal access notes
+On macOS the collector tries `wdutil info`, then the legacy Apple `airport -I` utility. macOS versions and hardware differ: Apple may hide RSSI from unprivileged command-line tools. If the dashboard says RSSI is unavailable, the application is running but macOS is not exposing a supported reading through these methods. Do not treat an empty reading as zero.
 
-## Interpreting alerts
-An unknown MAC means the device was not in your approved list; it does **not** prove an intrusion. Identify it from your router's connected-device page before approving it. A failed ping or closed port is not proof of breach. Router configuration integrity checks require supported router APIs or manual configuration exports; this MVP does not claim to inspect hidden router settings.
+Linux support uses `iw` if installed and the user has permission to read wireless link data.
 
-## Safety
-Use only on networks and devices you own or are authorized to administer. Keep router firmware updated, use WPA2-AES/WPA3, disable WPS if not needed, change default admin credentials, and review remote administration settings.
+## What the signal graph means
+RSSI changes can be caused by people, device movement, walls, multipath, interference, access-point power changes, or normal radio variation. This MVP does **not** identify a person, direction, or crossing event. It is a first-stage signal-collection experiment.
+
+Research-grade Wi-Fi sensing generally uses CSI (Channel State Information), which ordinary macOS Wi-Fi APIs do not expose. CSI requires compatible Wi-Fi hardware, firmware, and drivers; a normal phone hotspot plus a dashboard is not sufficient for reliable through-room detection.
+
+## Data and privacy
+Samples are stored locally in `data/wifisense.db`. The app does not scan other devices, capture payloads, deauthenticate clients, or change router settings.
