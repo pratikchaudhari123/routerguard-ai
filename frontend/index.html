@@ -68,6 +68,17 @@ td,th{text-align:left;padding:10px;border-bottom:1px solid #263a55;font-size:13p
 <h3>Signal-change events</h3><div style="overflow-x:auto"><table><thead><tr><th>Time</th><th>Reading</th><th>Change from baseline</th><th>Interpretation</th></tr></thead><tbody id="senseEvents"><tr><td colspan="4">No events yet.</td></tr></tbody></table></div>
 </div>
 <div class="card">
+<div class="row"><h2>Main router &amp; CSI receiver connection</h2><span class="status" id="pairStatus">Checking connection</span></div>
+<p class="note">Use your existing JioFiber router as the Wi-Fi access point. The ESP32-S3 CSI board joins that same Wi-Fi network wirelessly. No extender, second router, Ethernet cable between routers, or JioFiber reset is required for the first experiment.</p>
+<div class="grid" style="margin-bottom:0">
+<div><div class="label">MacBook Wi-Fi network</div><div class="value" id="pairSSID" style="font-size:19px">Checking…</div><small id="pairRadio">—</small></div>
+<div><div class="label">CSI receiver</div><div class="value" id="pairReceiver" style="font-size:19px">Not connected</div><small id="pairSeen">No CSI packets received yet</small></div>
+</div>
+<p class="note"><b>Pairing method:</b> configure the ESP32-S3 firmware with the same SSID/password as the MacBook network and the MacBook's LAN address as its RouterGuard API destination. The firmware folder contains the exact build instructions. This dashboard does not scan nearby Wi-Fi networks or change router settings; network credentials are configured on the receiver, not sent to a browser page.</p>
+<p class="note">For this Mac, the supplied diagnostic showed gateway <b>192.168.31.1</b> and MacBook address <b>192.168.31.131</b>. Confirm the MacBook address before flashing because DHCP can change it. API destination example: <code>http://192.168.31.131:8000/api/csi</code>.</p>
+<p><a href="https://github.com/pratikchaudhari123/routerguard-ai/tree/feature/human-motion-detection/firmware/esp32-csi-receiver" target="_blank" rel="noreferrer" style="color:#8fb8ff">Open ESP32-S3 firmware and setup instructions</a></p>
+</div>
+<div class="card">
 <div class="row"><h2>Multi-receiver area estimation</h2><span class="status" id="locStatus">Waiting for CSI receivers</span></div>
 <p class="note">Register each CSI receiver at its measured position on a simple 0–100 room map. After at least two separated receivers are sending CSI, collect an empty-room baseline. The map shows only an experimental activity centroid when two or more receivers report simultaneous changes; it is not an exact person location.</p>
 <div class="grid">
@@ -272,8 +283,22 @@ async function stopHumanDetection(){
  try{await fetch('/api/human-detection/stop',{method:'POST'});await refreshCSI();}
  catch(e){console.error(e);}
 }
+async function refreshReceiverPairing(){
+ try{
+  const [n,c]=await Promise.all([
+   fetch('/api/status').then(r=>r.json()),
+   fetch('/api/csi/status').then(r=>r.json())
+  ]);
+  el('pairSSID').textContent=n.ssid||'Connected network (SSID unavailable)';
+  el('pairRadio').textContent=[n.interface||'Wi-Fi interface unknown',n.channel?'Channel '+n.channel:'',n.rssi!==null&&n.rssi!==undefined?'RSSI '+n.rssi+' dBm':''].filter(Boolean).join(' · ');
+  el('pairReceiver').textContent=c.receiver_connected?'CSI receiver connected':'Not connected';
+  el('pairSeen').textContent=c.last_seen?'Last real CSI packet: '+new Date(c.last_seen).toLocaleTimeString():'No real CSI packets received';
+  el('pairStatus').textContent=c.receiver_connected?'CSI link active':'Waiting for ESP32 CSI';
+ }catch(e){el('pairStatus').textContent='Connection status unavailable';}
+}
 async function refreshCSI(){
  try{
+  await refreshReceiverPairing();
   const [d,h]=await Promise.all([
    fetch('/api/csi/status').then(r=>r.json()),
    fetch('/api/human-detection/status').then(r=>r.json())
