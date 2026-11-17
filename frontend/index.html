@@ -68,54 +68,23 @@ td,th{text-align:left;padding:10px;border-bottom:1px solid #263a55;font-size:13p
 <h3>Signal-change events</h3><div style="overflow-x:auto"><table><thead><tr><th>Time</th><th>Reading</th><th>Change from baseline</th><th>Interpretation</th></tr></thead><tbody id="senseEvents"><tr><td colspan="4">No events yet.</td></tr></tbody></table></div>
 </div>
 <div class="card">
-<div class="row"><h2>Main router &amp; CSI receiver connection</h2><span class="status" id="pairStatus">Checking connection</span></div>
-<p class="note">Use your existing JioFiber router as the Wi-Fi access point. The ESP32-S3 CSI board joins that same Wi-Fi network wirelessly. No extender, second router, Ethernet cable between routers, or JioFiber reset is required for the first experiment.</p>
-<div class="grid" style="margin-bottom:0">
-<div><div class="label">MacBook Wi-Fi network</div><div class="value" id="pairSSID" style="font-size:19px">Checking…</div><small id="pairRadio">—</small></div>
-<div><div class="label">CSI receiver</div><div class="value" id="pairReceiver" style="font-size:19px">Not connected</div><small id="pairSeen">No CSI packets received yet</small></div>
+ <div class="row"><h2>Two-router hardware diagnostics</h2><span class="status" id="routerDiagStatus">Checking routers…</span></div>
+ <p class="note">Read-only checks for the existing JioAirFiber → TP-Link TL-WR850N WDS setup. This section checks IP reachability, web-management ports, and MAC addresses visible in the MacBook ARP table. It does not log in to either router or change settings.</p>
+ <div class="grid">
+  <div><div class="label">JioAirFiber · 192.168.31.1</div><div class="value" id="jioReach" style="font-size:19px">Checking…</div><small id="jioDetails">—</small></div>
+  <div><div class="label">TP-Link TL-WR850N · 192.168.0.1</div><div class="value" id="tpReach" style="font-size:19px">Checking…</div><small id="tpDetails">—</small></div>
+ </div>
+ <h3>Measurement access</h3>
+ <table><tbody>
+  <tr><th>WDS bridge state</th><td id="wdsReadout">Manual check required in TP-Link Advanced → Status → Wireless.</td></tr>
+  <tr><th>Router-to-router RSSI</th><td id="wdsRssiReadout">Not measured; accessible WDS RSSI has not been confirmed.</td></tr>
+  <tr><th>CSI data</th><td id="csiReadout">No CSI feed is exposed by this diagnostic endpoint.</td></tr>
+  <tr><th>MacBook RSSI</th><td>Separate MacBook-to-associated-access-point measurement; not the WDS link.</td></tr>
+ </tbody></table>
+ <p class="note"><b>Manual confirmation:</b> Open <code>http://192.168.0.1</code> → <b>Advanced → Status → Wireless</b>. Record the exact <b>WDS Status</b> value. TP-Link says <code>Run</code> means the bridge is established. Do not change settings or update firmware during this test.</p>
+ <div class="row"><small id="routerDiagUpdated">Waiting for diagnostics</small><button onclick="refreshRouterDiagnostics()">Run checks again</button></div>
+ <p class="note">Reachability or WDS status proves connectivity only. It does not prove that the router exposes upstream RSSI or CSI. The project will not label RSSI changes as human detection.</p>
 </div>
-<p class="note"><b>Pairing method:</b> configure the ESP32-S3 firmware with the same SSID/password as the MacBook network and the MacBook's LAN address as its RouterGuard API destination. The firmware folder contains the exact build instructions. This dashboard does not scan nearby Wi-Fi networks or change router settings; network credentials are configured on the receiver, not sent to a browser page.</p>
-<p class="note">For this Mac, the supplied diagnostic showed gateway <b>192.168.31.1</b> and MacBook address <b>192.168.31.131</b>. Confirm the MacBook address before flashing because DHCP can change it. API destination example: <code>http://192.168.31.131:8000/api/csi</code>.</p>
-<p><a href="https://github.com/pratikchaudhari123/routerguard-ai/tree/feature/human-motion-detection/firmware/esp32-csi-receiver" target="_blank" rel="noreferrer" style="color:#8fb8ff">Open ESP32-S3 firmware and setup instructions</a></p>
-</div>
-<div class="card">
-<div class="row"><h2>Multi-receiver area estimation</h2><span class="status" id="locStatus">Waiting for CSI receivers</span></div>
-<p class="note">Register each CSI receiver at its measured position on a simple 0–100 room map. After at least two separated receivers are sending CSI, collect an empty-room baseline. The map shows only an experimental activity centroid when two or more receivers report simultaneous changes; it is not an exact person location.</p>
-<div class="grid">
-<div><div class="label">Receiver ID</div><input id="locNodeId" value="esp32-csi-01" maxlength="80" style="width:100%;padding:10px;background:#0a1626;color:#e6eefb;border:1px solid #263a55;border-radius:8px"></div>
-<div><div class="label">Map X (0–100)</div><input id="locX" type="number" min="0" max="100" value="20" style="width:100%;padding:10px;background:#0a1626;color:#e6eefb;border:1px solid #263a55;border-radius:8px"></div>
-<div><div class="label">Map Y (0–100)</div><input id="locY" type="number" min="0" max="100" value="20" style="width:100%;padding:10px;background:#0a1626;color:#e6eefb;border:1px solid #263a55;border-radius:8px"></div>
-<div><div class="label">Zone label</div><input id="locZone" value="North-West" maxlength="40" style="width:100%;padding:10px;background:#0a1626;color:#e6eefb;border:1px solid #263a55;border-radius:8px"></div>
-</div>
-<div class="row"><div><button onclick="registerLocNode()">Register / update receiver</button> <button onclick="calibrateLocalization()">Calibrate empty room</button> <button onclick="stopLocalization()">Stop</button></div><small id="locCounts">0 receivers · 0 calibrated</small></div>
-<canvas id="localizationMap" width="900" height="420" style="height:320px;margin-top:14px"></canvas>
-<div class="grid" style="margin-bottom:0">
-<div><div class="label">Candidate X</div><div class="value" id="locCandidateX" style="font-size:20px">—</div></div>
-<div><div class="label">Candidate Y</div><div class="value" id="locCandidateY" style="font-size:20px">—</div></div>
-<div><div class="label">Active zones</div><div class="value" id="locZones" style="font-size:18px">—</div></div>
-</div>
-<div id="locReceivers" class="note">No receiver registered.</div>
-<p class="note">Hardware requirement: two or more compatible CSI receivers, physically separated and configured to send CSI packets to this MacBook. The current MacBook RSSI feed cannot populate this map. The centroid algorithm is an early test scaffold and needs validation before being treated as tracking.</p>
-</div>
-<div class="card"><div class="row"><h2>Human presence detection · CSI</h2><span class="status" id="csiConnection">Receiver not connected</span></div>
-<p class="note">This is the human-sensing path. Connect a compatible CSI receiver and send real CSI amplitude vectors. First calibrate with the room empty; the detector then flags sustained channel changes as possible human presence or movement. It does not use MacBook RSSI as CSI.</p>
-<div class="row"><div><button onclick="startHumanCalibration()">Calibrate empty room (60 CSI packets)</button> <button onclick="stopHumanDetection()">Stop human detection</button></div><small id="humanSeen">Waiting for real CSI packets</small></div>
-<div class="grid" style="margin-bottom:0">
-<div><div class="label">Human presence status</div><div class="value" id="humanStatus" style="font-size:20px">Waiting for CSI receiver</div></div>
-<div><div class="label">CSI deviation score</div><div class="value" id="humanScore" style="font-size:20px">—</div></div>
-<div><div class="label">Subcarriers changed</div><div class="value" id="humanChanged" style="font-size:20px">—</div></div>
-<div><div class="label">Empty-room calibration</div><div class="value" id="humanCal" style="font-size:20px">Not calibrated</div></div>
-</div>
-<p class="note">A positive result means sustained CSI deviation, not proof of a human. Fans, doors, pets, objects, people, and RF interference can all change CSI. Human-vs-object classification requires labelled real-world training trials and validation.</p>
-<div class="row"><h3>Human-presence candidate events</h3></div><div style="overflow-x:auto"><table><thead><tr><th>Time</th><th>Result</th><th>Score</th><th>Changed subcarriers</th></tr></thead><tbody id="humanEvents"><tr><td colspan="4">No real CSI events yet.</td></tr></tbody></table></div>
-<div class="row"><h3>Raw CSI receiver diagnostics</h3></div>
-<div class="grid" style="margin-bottom:0">
-<div><div class="label">Motion status</div><div class="value" id="csiMotion" style="font-size:20px">Waiting for CSI</div></div>
-<div><div class="label">Signal change score</div><div class="value" id="csiScore" style="font-size:20px">—</div></div>
-<div><div class="label">CSI subcarriers</div><div class="value" id="csiSubs" style="font-size:20px">—</div></div>
-<div><div class="label">Calibration</div><div class="value" id="csiCal" style="font-size:20px">Not started</div></div>
-</div><small id="csiSeen">Connect a compatible CSI receiver to begin.</small>
-<p class="note">This panel reports CSI receiver data only. RSSI from the Mac is not a substitute for CSI. A movement score is experimental and does not identify an object or locate it precisely.</p></div>
 <div class="card">
 <div class="row"><h2>Measured Wi-Fi room coverage survey</h2><span class="status" id="fieldState">Waiting for survey points</span></div>
 <p class="note">Enter your room size, walk to a physical point, and record the RSSI measured by this MacBook. Repeat across the room. The heatmap is interpolated only from the points you measure; it is not a live radar or a person tracker.</p>
@@ -321,6 +290,28 @@ async function refreshCSI(){
   el('humanEvents').innerHTML=h.events.length?h.events.map(e=>'<tr><td>'+new Date(e.timestamp).toLocaleTimeString()+'</td><td>'+safeText(e.status)+'</td><td>'+e.score+'</td><td>'+Math.round(e.changed_fraction*100)+'%</td></tr>').join(''):'<tr><td colspan="4">No real CSI events yet.</td></tr>';
  }catch(e){console.error(e)}
 }
+async function refreshRouterDiagnostics(){
+ try{
+  const d=await(await fetch('/api/router-diagnostics')).json();
+  const byId=Object.fromEntries((d.routers||[]).map(r=>[r.id,r]));
+  function show(id,reach,details){
+   const r=byId[id];
+   el(reach).textContent=r?(r.reachable?'Reachable':'Not reachable from this Mac'):'Not configured';
+   el(reach).className='value '+(r&&r.reachable?'good':'notice');
+   el(details).textContent=r?('IP '+r.ip+' · Web ports '+(r.management_ports.length?r.management_ports.join(', '):'not detected')+' · ARP MAC '+(r.arp_mac||'not in local ARP table')):'—';
+  }
+  show('jio','jioReach','jioDetails');show('tplink','tpReach','tpDetails');
+  el('wdsReadout').textContent=d.wds_status.instruction;
+  el('wdsRssiReadout').textContent=d.measurement_access.wds_rssi;
+  el('csiReadout').textContent=d.measurement_access.csi;
+  el('routerDiagStatus').textContent='Read-only checks completed';
+  el('routerDiagUpdated').textContent='Last checked '+new Date(d.checked_at).toLocaleTimeString();
+ }catch(e){
+  el('routerDiagStatus').textContent='Diagnostics API unavailable';
+  el('routerDiagUpdated').textContent=e.message;
+ }
+}
+
 async function refresh(){
  try{
  const s=await(await fetch('/api/status')).json();
@@ -389,5 +380,5 @@ async function refreshLocalization(){
  }catch(e){console.error(e);}
 }
 
-refresh();refreshCoverage();refreshCSI();refreshExperiment();refreshSensing();refreshDiagnostics();setInterval(refreshDiagnostics,2000);setInterval(refresh,2000);setInterval(refreshCoverage,5000);refreshLocalization();setInterval(refreshLocalization,1000);setInterval(refreshCSI,1000);setInterval(refreshExperiment,3000);setInterval(refreshSensing,1000);
+refresh();refreshCoverage();refreshExperiment();refreshSensing();refreshDiagnostics();refreshRouterDiagnostics();setInterval(refreshDiagnostics,2000);setInterval(refresh,2000);setInterval(refreshCoverage,5000);refreshLocalization();setInterval(refreshLocalization,1000);setInterval(refreshCSI,1000);setInterval(refreshExperiment,3000);setInterval(refreshSensing,1000);setInterval(refreshRouterDiagnostics,10000);
 </script></body></html>
