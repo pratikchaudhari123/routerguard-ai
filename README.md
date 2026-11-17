@@ -93,3 +93,26 @@ Check receiver status at `GET /api/csi/status`.
 ### Hardware and accuracy boundaries
 
 The current MacBook RSSI collector is retained as a diagnostic only; it is not CSI and cannot provide exact object coordinates. The ESP32 CSI receiver is the next required sensing component unless another compatible CSI-capable receiver is available. A single link can detect channel changes but generally cannot uniquely determine where within a room the movement occurred. Multi-zone localization requires multiple links/receivers, spatial calibration, and validation against false alarms.
+
+
+## Controlled movement experiment recorder
+
+The dashboard now includes a labelled RSSI experiment recorder on the `feature/csi-motion-sensing` branch.
+
+1. Keep the router and MacBook fixed and do not change Wi-Fi band/channel during a session.
+2. Enter a manually measured test zone (for example, `Zone A`) and choose `Empty room baseline`.
+3. Click **Start recording** and leave the zone empty for about 2 minutes.
+4. Change the condition to `Person standing` or `Person walking`, set the zone where the movement occurs, then click **Apply zone / condition**.
+5. Repeat the same test several times for each zone. Use **Stop recording** when finished.
+6. Compare sample count, average RSSI, min/max, RSSI range, and average variation by zone and condition.
+
+Samples are collected at the normal 2-second interval and stored in a separate `experiment_samples` SQLite table. Existing signal history is not deleted. The comparison is descriptive and does not yet classify human presence, infer a zone, estimate distance, or identify a person. Zone names are manual ground-truth labels for experiments.
+
+API endpoints:
+- `POST /api/experiment/start` — start a labelled session.
+- `POST /api/experiment/phase` — change zone/condition while recording.
+- `POST /api/experiment/stop` — stop recording.
+- `GET /api/experiment/status` — current recorder state.
+- `GET /api/experiment/summary` — grouped statistics for the current/most recent session.
+
+Allowed phases: `empty`, `standing`, `walking`, `object_moving`.
