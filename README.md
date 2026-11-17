@@ -116,3 +116,18 @@ API endpoints:
 - `GET /api/experiment/summary` — grouped statistics for the current/most recent session.
 
 Allowed phases: `empty`, `standing`, `walking`, `object_moving`.
+
+
+## Local RSSI signal-change test (no CSI hardware)
+
+The dashboard includes a quick exploratory test at **Quick signal-change test (MacBook RSSI)**:
+
+1. Run the app natively on the MacBook and wait at least 10 seconds for RSSI samples.
+2. Keep the router and MacBook fixed. Leave the test area empty.
+3. Click **Calibrate empty area & start**.
+4. Walk or move an object in different parts of the room, one trial at a time.
+5. Watch the change-from-baseline value and event list. Click **Stop test** when finished.
+
+This test compares the RSSI measured at the MacBook with an empty-area baseline. It can show whether a movement coincides with a change at that receiver. It is **not device-free object detection across the entire Wi-Fi coverage area**, does not identify humans versus objects, and cannot estimate position. Small RSSI changes may be missed; unrelated interference or router/client behavior may trigger changes. The threshold is an initial experiment setting, not a validated detection threshold.
+
+For coverage-area sensing, continue with compatible CSI receiver hardware and multiple spatially separated sensing links. The CSI endpoint remains an integration scaffold until real receiver firmware sends correctly parsed CSI amplitudes.
