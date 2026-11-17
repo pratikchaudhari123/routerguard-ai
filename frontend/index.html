@@ -94,10 +94,23 @@ td,th{text-align:left;padding:10px;border-bottom:1px solid #263a55;font-size:13p
 <div><div class="label">Calibration</div><div class="value" id="csiCal" style="font-size:20px">Not started</div></div>
 </div><small id="csiSeen">Connect a compatible CSI receiver to begin.</small>
 <p class="note">This panel reports CSI receiver data only. RSSI from the Mac is not a substitute for CSI. A movement score is experimental and does not identify an object or locate it precisely.</p></div>
-<div class="card"><div class="row"><h2>Wi-Fi coverage field · live visualisation</h2><span class="status" id="fieldState">Waiting for valid signal</span></div>
-<p class="note">Animated coverage illustration. The circles represent an approximate radio field, not a measured floor plan or a detected person's exact location.</p>
-<canvas id="field" width="1100" height="420" style="height:420px"></canvas>
-<div class="row"><small id="fieldMetric">Signal variation: unavailable</small><small>Router → radio field → MacBook receiver</small></div>
+<div class="card">
+<div class="row"><h2>Measured Wi-Fi room coverage survey</h2><span class="status" id="fieldState">Waiting for survey points</span></div>
+<p class="note">Enter your room size, walk to a physical point, and record the RSSI measured by this MacBook. Repeat across the room. The heatmap is interpolated only from the points you measure; it is not a live radar or a person tracker.</p>
+<div class="grid">
+<div><div class="label">Room width (metres)</div><input id="roomWidth" type="number" min="1" max="1000" step="0.1" value="5" style="width:100%;padding:10px;background:#0a1626;color:#e6eefb;border:1px solid #263a55;border-radius:8px"></div>
+<div><div class="label">Room height (metres)</div><input id="roomHeight" type="number" min="1" max="1000" step="0.1" value="4" style="width:100%;padding:10px;background:#0a1626;color:#e6eefb;border:1px solid #263a55;border-radius:8px"></div>
+<div><div class="label">Survey X (metres from left)</div><input id="surveyX" type="number" min="0" step="0.1" value="0.5" style="width:100%;padding:10px;background:#0a1626;color:#e6eefb;border:1px solid #263a55;border-radius:8px"></div>
+<div><div class="label">Survey Y (metres from bottom)</div><input id="surveyY" type="number" min="0" step="0.1" value="0.5" style="width:100%;padding:10px;background:#0a1626;color:#e6eefb;border:1px solid #263a55;border-radius:8px"></div>
+<div><div class="label">Point label (optional)</div><input id="surveyZone" maxlength="40" placeholder="e.g. near window" style="width:100%;padding:10px;background:#0a1626;color:#e6eefb;border:1px solid #263a55;border-radius:8px"></div>
+</div>
+<div class="row"><div><button onclick="recordCoveragePoint()">Record RSSI at this position</button></div><small id="fieldMetric">No survey points recorded</small></div>
+<canvas id="field" width="1000" height="560" style="height:420px;margin-top:12px"></canvas>
+<p class="note">Map axes are in metres. Router position is not assumed: mark it on the map by entering its measured room coordinates below. Move the MacBook to each survey position when collecting a point.</p>
+<div class="grid">
+<div><div class="label">Router X (metres from left)</div><input id="routerX" type="number" min="0" step="0.1" value="0.5" style="width:100%;padding:10px;background:#0a1626;color:#e6eefb;border:1px solid #263a55;border-radius:8px"></div>
+<div><div class="label">Router Y (metres from bottom)</div><input id="routerY" type="number" min="0" step="0.1" value="3.5" style="width:100%;padding:10px;background:#0a1626;color:#e6eefb;border:1px solid #263a55;border-radius:8px"></div>
+</div>
 </div>
 <div class="card"><h2>Radio details</h2><div class="grid" style="margin-bottom:0">
 <div><div class="label">Wi-Fi interface</div><div id="interface" class="value" style="font-size:18px">—</div></div>
@@ -125,48 +138,56 @@ async function refreshDiagnostics(){
  }
 }
 
-function drawField(rssi,variation,activity){
- const c=el('field'); if(!c) return;
- const ctx=c.getContext('2d'), w=c.width, h=c.height;
- ctx.clearRect(0,0,w,h);
- ctx.fillStyle='#0a1626';ctx.fillRect(0,0,w,h);
- ctx.strokeStyle='#1c3049';ctx.lineWidth=1;
- for(let x=30;x<w;x+=55){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke()}
- for(let y=25;y<h;y+=55){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke()}
- const t=Date.now()/900, cx=330, cy=210;
- const strength=typeof rssi==='number' && rssi<0 ? Math.max(.25,Math.min(1,(rssi+90)/55)) : .55;
- const base=85+strength*75;
- for(let i=0;i<4;i++){
-   const radius=base+i*54+Math.sin(t-i*.7)*5;
-   ctx.beginPath();ctx.arc(cx,cy,radius,0,Math.PI*2);
-   ctx.strokeStyle='rgba(75,169,255,'+(0.48-i*.09)+')';ctx.lineWidth=2;ctx.stroke();
- }
- ctx.beginPath();ctx.arc(cx,cy,base+220,0,Math.PI*2);
- ctx.fillStyle='rgba(52,132,220,0.045)';ctx.fill();
- // Router
- ctx.fillStyle='#e6eefb';ctx.fillRect(cx-34,cy-22,68,44);
- ctx.fillStyle='#2864dc';ctx.fillRect(cx-24,cy-12,48,24);
- ctx.strokeStyle='#9fcaff';ctx.lineWidth=3;
- ctx.beginPath();ctx.moveTo(cx-15,cy-22);ctx.lineTo(cx-28,cy-47);ctx.moveTo(cx+15,cy-22);ctx.lineTo(cx+28,cy-47);ctx.stroke();
- ctx.fillStyle='#e6eefb';ctx.font='bold 16px sans-serif';ctx.fillText('Wi-Fi router',cx-43,cy+52);
- // Mac receiver
- const mx=900,my=210;
- ctx.fillStyle='#c8d6e8';ctx.fillRect(mx-44,my-30,88,58);
- ctx.fillStyle='#2864dc';ctx.fillRect(mx-36,my-22,72,42);
- ctx.fillStyle='#e6eefb';ctx.fillRect(mx-53,my+29,106,6);
- ctx.fillStyle='#e6eefb';ctx.fillText('MacBook receiver',mx-67,my+57);
- // signal path
- ctx.setLineDash([7,8]);ctx.strokeStyle='rgba(115,190,255,.6)';ctx.lineWidth=2;
- ctx.beginPath();ctx.moveTo(cx+35,cy);ctx.lineTo(mx-55,my);ctx.stroke();ctx.setLineDash([]);
- // Animated travelling pulse is a field animation, not a person/object detection.
- const px=cx+45+((t*38)%470), py=cy+Math.sin(t*1.7)*22;
- ctx.beginPath();ctx.arc(px,py,8+Math.sin(t*3)*2,0,Math.PI*2);
- ctx.fillStyle='rgba(255,203,105,.9)';ctx.fill();
- ctx.fillStyle='#91a4bd';ctx.font='13px sans-serif';ctx.fillText('Animated radio-field pulse (illustrative)',525,35);
- const valid=typeof rssi==='number' && rssi<0;
- el('fieldState').textContent=valid?'Signal feed connected':'Waiting for valid signal';
- el('fieldMetric').textContent=valid?'RSSI '+rssi+' dBm · variation '+(variation??'—')+' dB · '+(activity||''):'No valid RSSI sample yet — spatial sensing unavailable';
+
+let coveragePoints=[];
+async function refreshCoverage(){
+ try{
+  const d=await(await fetch('/api/coverage/status')).json();
+  coveragePoints=d.points||[];
+  el('fieldState').textContent=coveragePoints.length+' measured survey points';
+  el('fieldMetric').textContent=coveragePoints.length+' actual RSSI readings stored';
+  drawCoverage();
+ }catch(e){el('fieldState').textContent='Coverage API unavailable';}
 }
+function drawCoverage(){
+ const c=el('field');if(!c)return;
+ const ctx=c.getContext('2d'),w=c.width,h=c.height;
+ const rw=Math.max(1,Number(el('roomWidth').value)||5),rh=Math.max(1,Number(el('roomHeight').value)||4);
+ ctx.clearRect(0,0,w,h);ctx.fillStyle='#0a1626';ctx.fillRect(0,0,w,h);
+ const pad=55,scale=Math.min((w-2*pad)/rw,(h-2*pad)/rh),mw=rw*scale,mh=rh*scale,ox=(w-mw)/2,oy=(h-mh)/2;
+ ctx.fillStyle='#10233a';ctx.fillRect(ox,oy,mw,mh);
+ // Interpolate measured RSSI using inverse-distance weighting; no synthetic moving marker.
+ if(coveragePoints.length){
+  const vals=coveragePoints.map(p=>p.rssi),min=Math.min(...vals),max=Math.max(...vals);
+  const cell=10;
+  for(let py=0;py<mh;py+=cell)for(let px=0;px<mw;px+=cell){
+   const x=(px+cell/2)/scale,y=rh-(py+cell/2)/scale;
+   let weighted=0,weights=0;
+   for(const p of coveragePoints){const d2=(p.x-x)**2+(p.y-y)**2;if(d2<0.0001){weighted=p.rssi;weights=1;break;}const wt=1/d2;weighted+=p.rssi*wt;weights+=wt;}
+   const v=weighted/weights,t=max===min?.5:(v-min)/(max-min);
+   ctx.fillStyle='rgba('+Math.round(35+190*t)+','+Math.round(105+75*(1-t))+','+Math.round(220-100*t)+',0.42)';
+   ctx.fillRect(ox+px,oy+py,cell+1,cell+1);
+  }
+ }
+ ctx.strokeStyle='#b8cce4';ctx.lineWidth=3;ctx.strokeRect(ox,oy,mw,mh);
+ ctx.fillStyle='#e6eefb';ctx.font='13px sans-serif';
+ for(let i=0;i<=rw;i++){const x=ox+i*scale;ctx.fillText(String(i)+'m',x-8,oy+mh+20);}
+ for(let i=0;i<=rh;i++){const y=oy+mh-i*scale;ctx.fillText(String(i)+'m',ox-35,y+4);}
+ const rx=Number(el('routerX').value),ry=Number(el('routerY').value);
+ if(rx>=0&&rx<=rw&&ry>=0&&ry<=rh){const x=ox+rx*scale,y=oy+mh-ry*scale;ctx.fillStyle='#fff';ctx.fillRect(x-8,y-8,16,16);ctx.fillStyle='#fff';ctx.fillText('Router',x+12,y-10);}
+ for(const p of coveragePoints){const x=ox+p.x*scale,y=oy+mh-p.y*scale;ctx.beginPath();ctx.arc(x,y,7,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.strokeStyle='#08111f';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='#fff';ctx.fillText(p.rssi+' dBm',x+9,y-8);}
+ if(!coveragePoints.length){ctx.fillStyle='#d5e1f0';ctx.font='18px sans-serif';ctx.fillText('No measurements yet — record RSSI at physical positions',ox+15,oy+mh/2);}
+}
+async function recordCoveragePoint(){
+ try{
+  const body={x:Number(el('surveyX').value),y:Number(el('surveyY').value),room_width:Number(el('roomWidth').value),room_height:Number(el('roomHeight').value),zone:el('surveyZone').value.trim()||null};
+  const r=await fetch('/api/coverage/point',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d=await r.json();if(!r.ok)throw new Error(d.detail||'Could not record point');
+  await refreshCoverage();
+  el('fieldMetric').textContent='Recorded '+d.point.rssi+' dBm at ('+d.point.x+'m, '+d.point.y+'m)';
+ }catch(e){el('fieldMetric').textContent=e.message;}
+}
+['roomWidth','roomHeight','routerX','routerY'].forEach(id=>el(id).addEventListener('input',drawCoverage));
 function draw(values){
  const c=el('chart'),ctx=c.getContext('2d'),w=c.width,h=c.height;ctx.clearRect(0,0,w,h);
  ctx.strokeStyle='#263a55';ctx.lineWidth=1;
@@ -251,7 +272,7 @@ async function refresh(){
  el('updated').textContent=s.timestamp?'Updated '+new Date(s.timestamp).toLocaleTimeString():'Waiting';
  el('source').textContent=s.source||'No supported signal source detected';
  el('interface').textContent=s.interface||'—';el('noise').textContent=s.noise===null?'—':s.noise+' dBm';
- el('channel').textContent=s.channel??'—';draw(s.history||[]);drawField(s.rssi,s.variation_db,s.activity);
+ el('channel').textContent=s.channel??'—';draw(s.history||[]);
  const hist=await(await fetch('/api/history?limit=12')).json();
  el('rows').innerHTML=hist.reverse().map(x=>'<tr><td>'+new Date(x.timestamp).toLocaleTimeString()+'</td><td>'+(x.rssi??'—')+'</td><td>'+(x.variation??'—')+'</td><td>'+x.activity+'</td></tr>').join('')||'<tr><td colspan="4">No samples yet</td></tr>';
  }catch(e){console.error(e)}
@@ -308,5 +329,5 @@ async function refreshLocalization(){
  }catch(e){console.error(e);}
 }
 
-refresh();refreshCSI();refreshExperiment();refreshSensing();refreshDiagnostics();setInterval(refreshDiagnostics,2000);setInterval(refresh,2000);refreshLocalization();setInterval(refreshLocalization,1000);setInterval(refreshCSI,1000);setInterval(refreshExperiment,3000);setInterval(refreshSensing,1000);
+refresh();refreshCoverage();refreshCSI();refreshExperiment();refreshSensing();refreshDiagnostics();setInterval(refreshDiagnostics,2000);setInterval(refresh,2000);setInterval(refreshCoverage,5000);refreshLocalization();setInterval(refreshLocalization,1000);setInterval(refreshCSI,1000);setInterval(refreshExperiment,3000);setInterval(refreshSensing,1000);
 </script></body></html>
