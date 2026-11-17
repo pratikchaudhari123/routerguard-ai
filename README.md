@@ -165,3 +165,18 @@ curl -X POST http://127.0.0.1:8002/api/localization/csi \
 ```
 
 Register at least two receivers at different physical positions, calibrate with the room empty, and have both send packets continuously. Do not send synthetic or copied vectors and interpret them as real detections.
+
+
+## Human-presence candidate detection (CSI path)
+
+The human-sensing path is deliberately separate from the MacBook RSSI graph.
+
+1. Connect a compatible CSI receiver and have it POST **real measured** amplitude vectors to `POST /api/csi`.
+2. Keep the monitored area empty and still, then click **Calibrate empty room (60 CSI packets)**.
+3. Wait until the dashboard says the baseline is ready.
+4. Walk through the monitored link/area and observe the sustained CSI-deviation events.
+5. Repeat empty-room and human-motion trials under different times and conditions. Record non-human disturbances separately.
+
+The detector computes per-subcarrier deviations from an empty-room mean and standard deviation, requires sustained changes across multiple packets, and applies hysteresis before raising or clearing a candidate event. The API is `GET /api/human-detection/status`, `POST /api/human-detection/calibrate`, and `POST /api/human-detection/stop`.
+
+**Interpretation boundary:** the output is a *possible human presence/movement candidate*, not a validated human classifier. CSI changes can also be caused by pets, moving objects, doors, fans, people outside the intended zone, multipath, or interference. The detector does not identify a person, count people, infer identity, or provide precise location. Human-vs-object classification requires a labelled dataset collected with the actual receiver, room, router, and placement, followed by held-out testing. MacBook RSSI is never treated as CSI and never triggers this CSI human-detection status. Synthetic or replayed vectors must not be presented as live detections.
