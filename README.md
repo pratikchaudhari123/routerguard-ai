@@ -103,3 +103,16 @@ Do not flash firmware as part of this experiment. TP-Link warns that firmware mu
 ## Success criteria for the next stage
 
 We can proceed to an RSSI-based router-link experiment only after identifying a repeatable, documented or directly verified read-only source for the **Jio-to-TP-Link WDS peer RSSI**. If the firmware does not expose it, additional dashboard or Python code cannot create that measurement. At that point, the two-router-only design needs a hardware/firmware capability change before human-crossing sensing can be evaluated.
+
+
+## Motion trial analysis (added in motion-analysis-v2)
+
+The existing live dashboard already provides the MacBook RSSI disturbance panel and the real-CSI candidate panel. This branch adds an offline analysis utility for exported, manually labelled experiment CSVs:
+
+```bash
+python tools/analyze_motion_trials.py path/to/exported-experiment.csv --output motion-report.json
+```
+
+The report compares empty-room samples with standing, walking, and object-moving labels by zone. It reports descriptive signal statistics and mean shifts only. It does not classify people versus objects, and it does not turn MacBook RSSI into Jio-to-TP-Link WDS RSSI.
+
+See [docs/MOTION_DETECTION_GUIDE.md](docs/MOTION_DETECTION_GUIDE.md) for the controlled trial protocol and interpretation limits. A unit test is provided at `tests/test_motion_analysis.py`.
