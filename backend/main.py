@@ -345,6 +345,25 @@ def init_db():
         # automatically: preserve its samples but mark an interrupted session stopped.
         latest = c.execute("""SELECT session_id,started_at,stopped_at,zone,phase,label,active
                               FROM experiment_sessions ORDER BY started_at DESC LIMIT 1""").fetchone()
+        # Backfill sessions created by older WiFiSense versions, which stored samples
+        # but did not yet have an experiment_sessions metadata table.
+        if latest is None:
+            legacy = c.execute("""SELECT session_id,MIN(timestamp),MAX(timestamp)
+                                  FROM experiment_samples GROUP BY session_id
+                                  ORDER BY MAX(id) DESC LIMIT 1""").fetchone()
+            if legacy:
+                last_sample = c.execute("""SELECT zone,phase,label FROM experiment_samples
+                                           WHERE session_id=? ORDER BY id DESC LIMIT 1""",
+                                        (legacy[0],)).fetchone()
+                interrupted_at = datetime.now(timezone.utc).isoformat()
+                c.execute("""INSERT OR IGNORE INTO experiment_sessions
+                             (session_id,started_at,stopped_at,zone,phase,label,active)
+                             VALUES(?,?,?,?,?,?,0)""",
+                          (legacy[0], legacy[1], interrupted_at,
+                           last_sample[0], last_sample[1], last_sample[2]))
+                latest = c.execute("""SELECT session_id,started_at,stopped_at,zone,phase,label,active
+                                      FROM experiment_sessions WHERE session_id=?""",
+                                   (legacy[0],)).fetchone()
         if latest:
             was_active = bool(latest[6])
             stopped_at = latest[2]
