@@ -180,7 +180,7 @@ def human_detector_ingest(device_id, values, timestamp):
             "calibrated": True, "event_changed": current != previous}
 
 
-experiment_state = {"active": False, "session_id": None, "label": None, "zone": None, "phase": None, "started_at": None}
+experiment_state = {"active": False, "session_id": None, "label": None, "zone": None, "phase": None, "started_at": None, "recovered_after_restart": False}
 
 # RSSI-only exploratory monitor. It measures changes at the MacBook receiver,
 # not CSI, object identity, or whole-room coverage.
@@ -334,10 +334,29 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
             timestamp TEXT NOT NULL, phase TEXT NOT NULL, zone TEXT NOT NULL,
             label TEXT, rssi INTEGER, noise INTEGER, variation REAL)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS experiment_sessions (
+            session_id TEXT PRIMARY KEY, started_at TEXT NOT NULL, stopped_at TEXT,
+            zone TEXT NOT NULL, phase TEXT NOT NULL, label TEXT, active INTEGER NOT NULL DEFAULT 1)""")
         c.execute("""CREATE TABLE IF NOT EXISTS human_detection_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL,
             device_id TEXT NOT NULL, status TEXT NOT NULL, score REAL,
             changed_fraction REAL, presence_candidate INTEGER NOT NULL)""")
+        # Recover the latest session after a server restart. Never resume recording
+        # automatically: preserve its samples but mark an interrupted session stopped.
+        latest = c.execute("""SELECT session_id,started_at,stopped_at,zone,phase,label,active
+                              FROM experiment_sessions ORDER BY started_at DESC LIMIT 1""").fetchone()
+        if latest:
+            was_active = bool(latest[6])
+            stopped_at = latest[2]
+            if was_active:
+                stopped_at = datetime.now(timezone.utc).isoformat()
+                c.execute("UPDATE experiment_sessions SET active=0, stopped_at=? WHERE session_id=?",
+                          (stopped_at, latest[0]))
+            experiment_state.update({
+                "active": False, "session_id": latest[0], "started_at": latest[1],
+                "zone": latest[3], "phase": latest[4], "label": latest[5],
+                "recovered_after_restart": was_active
+            })
         c.execute("""CREATE TABLE IF NOT EXISTS csi_samples (
             id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL,
             device_id TEXT NOT NULL, rssi INTEGER, amplitudes_json TEXT NOT NULL,
@@ -577,10 +596,17 @@ def start_experiment(payload: ExperimentStart):
     with lock:
         if experiment_state["active"]:
             raise HTTPException(status_code=409, detail="An experiment is already active")
-        experiment_state.update({"active": True, "session_id": str(uuid.uuid4()),
+        started_at = datetime.now(timezone.utc).isoformat()
+        session_id = str(uuid.uuid4())
+        experiment_state.update({"active": True, "session_id": session_id,
                                  "label": payload.label, "zone": payload.zone,
-                                 "phase": payload.phase,
-                                 "started_at": datetime.now(timezone.utc).isoformat()})
+                                 "phase": payload.phase, "started_at": started_at,
+                                 "recovered_after_restart": False})
+        with sqlite3.connect(DB_PATH) as c:
+            c.execute("""INSERT INTO experiment_sessions
+                         (session_id,started_at,zone,phase,label,active)
+                         VALUES(?,?,?,?,?,1)""",
+                      (session_id, started_at, payload.zone, payload.phase, payload.label))
         return dict(experiment_state)
 
 @app.post("/api/experiment/phase")
@@ -589,14 +615,22 @@ def set_experiment_phase(payload: ExperimentPhase):
         if not experiment_state["active"]:
             raise HTTPException(status_code=409, detail="Start an experiment first")
         experiment_state.update({"zone": payload.zone, "phase": payload.phase, "label": payload.label})
+        with sqlite3.connect(DB_PATH) as c:
+            c.execute("""UPDATE experiment_sessions SET zone=?,phase=?,label=?
+                         WHERE session_id=? AND active=1""",
+                      (payload.zone, payload.phase, payload.label, experiment_state["session_id"]))
         return dict(experiment_state)
 
 @app.post("/api/experiment/stop")
 def stop_experiment():
     with lock:
         session_id = experiment_state["session_id"]
+        stopped_at = datetime.now(timezone.utc).isoformat()
         experiment_state.update({"active": False})
-        return {"ok": True, "session_id": session_id}
+        with sqlite3.connect(DB_PATH) as c:
+            c.execute("UPDATE experiment_sessions SET active=0, stopped_at=? WHERE session_id=?",
+                      (stopped_at, session_id))
+        return {"ok": True, "session_id": session_id, "stopped_at": stopped_at}
 
 @app.get("/api/experiment/status")
 def experiment_status():
