@@ -24,7 +24,7 @@ FRONTEND_DIR = PROJECT_ROOT / "frontend"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 INTERVAL = 2
 lock = Lock()
-state = {"connected": False, "ssid": None, "interface": None, "rssi": None,
+state = {"connected": False, "ssid": None, "bssid": None, "interface": None, "rssi": None,
          "noise": None, "channel": None, "band": None, "channel_width_mhz": None,
          "tx_rate_mbps": None, "cca_percent": None, "phy_mode": None,
          "sniffer_supported": None, "timestamp": None,
@@ -213,6 +213,7 @@ def read_wifi():
     system = platform.system()
     iface = wifi_interface()
     ssid = None
+    bssid = None
     rssi = noise = channel = channel_width_mhz = tx_rate_mbps = cca_percent = None
     band = phy_mode = None
     sniffer_supported = None
@@ -228,6 +229,7 @@ def read_wifi():
                     return {
                         "connected": bool(native.get("connected")),
                         "ssid": native.get("ssid") or None,
+                        "bssid": native.get("bssid") or None,
                         "interface": native.get("interface") or iface,
                         "rssi": native.get("rssi") if isinstance(native.get("rssi"), int) and native.get("rssi") < 0 else None,
                         "noise": native.get("noise") if isinstance(native.get("noise"), int) and native.get("noise") < 0 else None,
@@ -256,6 +258,10 @@ def read_wifi():
                     rssi = int(m.group(1))
                 if m and "noise" in low:
                     noise = int(m.group(1))
+                if "bssid" in low:
+                    bm = re.search(r"(?i)\b(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\b", line)
+                    if bm:
+                        bssid = bm.group(0).upper()
                 if "channel" in low:
                     cm = re.search(r"(?:5g|2g)?(\d{1,3})", line, re.I)
                     if cm:
@@ -300,7 +306,7 @@ def read_wifi():
             source = "Linux iw"
     if channel is not None:
         band = "2.4 GHz" if channel <= 14 else "5 GHz"
-    return {"connected": bool(ssid or rssi is not None), "ssid": ssid,
+    return {"connected": bool(ssid or rssi is not None), "ssid": ssid, "bssid": bssid,
             "interface": iface, "rssi": rssi, "noise": noise,
             "channel": channel, "band": band, "channel_width_mhz": channel_width_mhz,
             "tx_rate_mbps": tx_rate_mbps, "cca_percent": cca_percent,
@@ -311,13 +317,13 @@ def init_db():
     with sqlite3.connect(DB_PATH) as c:
         c.execute("""CREATE TABLE IF NOT EXISTS samples (
             id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL,
-            ssid TEXT, interface TEXT, rssi INTEGER, noise INTEGER,
+            ssid TEXT, bssid TEXT, interface TEXT, rssi INTEGER, noise INTEGER,
             channel INTEGER, variation REAL, activity TEXT,
             band TEXT, channel_width_mhz INTEGER, tx_rate_mbps REAL,
             cca_percent REAL, phy_mode TEXT, sniffer_supported INTEGER)""")
         existing = {row[1] for row in c.execute("PRAGMA table_info(samples)")}
         migrations = {
-            "band": "TEXT", "channel_width_mhz": "INTEGER",
+            "bssid": "TEXT", "band": "TEXT", "channel_width_mhz": "INTEGER",
             "tx_rate_mbps": "REAL", "cca_percent": "REAL",
             "phy_mode": "TEXT", "sniffer_supported": "INTEGER",
         }
@@ -386,10 +392,10 @@ def take_sample():
                       (exp["session_id"], timestamp, exp["phase"], exp["zone"], exp["label"],
                        rssi, reading["noise"], variation))
     with sqlite3.connect(DB_PATH) as c:
-        c.execute("""INSERT INTO samples(timestamp,ssid,interface,rssi,noise,channel,variation,activity,
+        c.execute("""INSERT INTO samples(timestamp,ssid,bssid,interface,rssi,noise,channel,variation,activity,
                      band,channel_width_mhz,tx_rate_mbps,cca_percent,phy_mode,sniffer_supported)
-                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                  (timestamp, reading["ssid"], reading["interface"], rssi,
+                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  (timestamp, reading["ssid"], reading.get("bssid"), reading["interface"], rssi,
                    reading["noise"], reading["channel"], variation, activity,
                    reading["band"], reading["channel_width_mhz"], reading["tx_rate_mbps"],
                    reading["cca_percent"], reading["phy_mode"],
