@@ -87,7 +87,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{ou
 <div class="card"><div class="label">Recent variation</div><div class="value" id="variation">—</div><small>Range over recent samples</small></div>
 <div class="card"><div class="label">Signal interpretation</div><div class="value" style="font-size:19px" id="activity">Waiting…</div><small id="updated">—</small></div>
 </section>
-<div class="card" id="signal"><div class="row"><h2>Live RSSI signal</h2><small id="source">Reading local Wi-Fi diagnostics</small></div>
+<div class="card" id="signal"><div class="row"><h2>MacBook client RSSI diagnostic · excluded from router-link detection</h2><small id="source">Reading local Wi-Fi diagnostics</small></div>
 <canvas id="chart" width="1100" height="270"></canvas><small>Lower (more negative) values mean weaker received signal.</small></div>
 
 
@@ -124,7 +124,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{ou
 <p class="note">Suggested protocol: record 2 minutes empty, then 10 walking crossings with the devices fixed, then repeat the empty baseline. Compare the average RSSI shift and signal range. Repeat the full sequence at least 3 times. A difference is evidence of a repeatable radio disturbance only—not proof of a human crossing.</p>
 </div>
 <div class="card">
-<div class="row"><h2>Signal disturbance monitor (MacBook RSSI only)</h2><span class="status" id="senseStatus">Not calibrated</span></div>
+<div class="row"><h2>Legacy MacBook RSSI experiment · not used as the router-link sensor</h2><span class="status" id="senseStatus">Not calibrated</span></div>
 <p class="note">This monitor compares current MacBook RSSI with an empty-area reference and flags threshold changes. A flag means only that the received signal changed; it cannot tell whether a person, object, interference, or normal radio fluctuation caused it.</p>
 <div class="grid" style="margin-bottom:10px">
 <div><div class="label">Empty-area baseline</div><div class="value" id="senseBaseline" style="font-size:21px">—</div></div>
@@ -145,6 +145,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{ou
  </div>
  <h3>Measurement access</h3>
  <table><tbody>
+  <tr><th>Jio public-page WDS probe</th><td id="jioWdsProbe">Waiting for read-only router-page check.</td></tr>
+  <tr><th>TP-Link public-page WDS probe</th><td id="tpWdsProbe">Waiting for read-only router-page check.</td></tr>
   <tr><th>WDS bridge state</th><td id="wdsReadout">Inspect TP-Link Settings → Wireless → Connect to Network and Network Map; no WDS telemetry field has been verified.</td></tr>
   <tr><th>Router-to-router RSSI</th><td id="wdsRssiReadout">Not measured; accessible WDS RSSI has not been confirmed.</td></tr>
   <tr><th>CSI data</th><td id="csiReadout">No CSI feed is exposed by this diagnostic endpoint.</td></tr>
@@ -488,6 +490,10 @@ async function refreshRouterDiagnostics(){
    el(details).textContent=r?('IP '+r.ip+' · Web ports '+(r.management_ports.length?r.management_ports.join(', '):'not detected')+' · ARP MAC '+(r.arp_mac||'not in local ARP table')):'—';
   }
   show('jio','jioReach','jioDetails');show('tplink','tpReach','tpDetails');
+  for(const [id,target] of [['jio','jioWdsProbe'],['tplink','tpWdsProbe']]){
+   const p=byId[id]?.public_signal_probe;
+   el(target).textContent=p?(p.measurement_verified?'VERIFIED WDS PEER RSSI: '+p.wds_peer_rssi_dbm+' dBm':'NOT AVAILABLE · '+(p.detail||p.status)):'No probe result';
+  }
   el('wdsReadout').textContent=d.wds_status.instruction;
   el('wdsRssiReadout').textContent=d.measurement_access.wds_rssi;
   el('csiReadout').textContent=d.measurement_access.csi;
