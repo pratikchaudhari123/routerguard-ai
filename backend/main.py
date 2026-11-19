@@ -644,6 +644,7 @@ def sensing_status():
 
 @app.post("/api/sensing/calibrate")
 def sensing_calibrate():
+    global rssi_previous_sample
     values = [v for v in list(samples)[-30:] if isinstance(v, (int, float))]
     if len(values) < 5:
         raise HTTPException(status_code=409, detail="Need at least 5 RSSI samples. Wait 10 seconds and retry.")
@@ -654,6 +655,7 @@ def sensing_calibrate():
     threshold = round(max(3.0, robust_sigma * 2.5), 1)
     with lock:
         rssi_delta_window.clear()
+        rssi_previous_sample = None
         rssi_sensing.update({"enabled": True, "calibrated": True,
             "baseline_rssi": round(baseline, 1), "baseline_mad_db": round(mad, 2),
             "threshold_db": threshold, "last_delta_db": 0.0,
