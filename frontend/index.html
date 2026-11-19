@@ -15,6 +15,7 @@ h1{margin:0;font-size:clamp(27px,4vw,38px);letter-spacing:-.055em}h2{font-size:1
 .good{color:#66e3ad}.notice{color:#f6d27e}.warning,.error{color:#ffab8b}
 button{background:linear-gradient(135deg,#3478f6,#2456c7);color:white;border:1px solid #5789ed;border-radius:10px;padding:11px 16px;cursor:pointer;font-weight:650;box-shadow:0 5px 15px rgba(24,78,190,.18);transition:transform .15s,filter .15s}
 button:hover{filter:brightness(1.12);transform:translateY(-1px)}button:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.action-group{display:flex;gap:9px;flex-wrap:wrap}.action-group button{min-width:150px}#expExport{background:linear-gradient(135deg,#167a65,#12614f);border-color:#2b9c83}#expActionHelp{padding:10px 12px;border:1px solid #294563;border-radius:10px;background:#0b1b2d}
 input,select{font:inherit;outline:none}input:focus,select:focus{border-color:#60a5fa!important;box-shadow:0 0 0 3px rgba(59,130,246,.16)}
 canvas{width:100%;height:270px;display:block}table{width:100%;border-collapse:collapse;margin-top:12px}
 td,th{text-align:left;padding:11px 10px;border-bottom:1px solid #263a55;font-size:13px}th{color:#91a5c0;font-size:11px;text-transform:uppercase;letter-spacing:.07em}
@@ -78,7 +79,7 @@ td,th{text-align:left;padding:11px 10px;border-bottom:1px solid #263a55;font-siz
 <div><div class="label">Last sample age</div><div class="value" id="diagAge">—</div><small>How recently the collector wrote data</small></div>
 <div><div class="label">Database samples</div><div class="value" id="diagTotal">—</div><small>Total stored RSSI samples</small></div>
 </div>
-<div class="row"><small id="diagExperiment">Experiment recorder: checking…</small><button onclick="window.location.href='/api/experiment/export.csv'">Export current experiment CSV</button></div>
+<div class="row"><small id="diagExperiment">Experiment recorder: checking…</small><small>Recording starts only when you press Start recording in the experiment panel.</small></div>
 <p class="note">This verifies data collection and recording only. It does not verify person detection, object detection, or room localization.</p>
 </div>
 
@@ -90,7 +91,14 @@ td,th{text-align:left;padding:11px 10px;border-bottom:1px solid #263a55;font-siz
 <div><div class="label">Movement condition</div><select id="expPhase" style="width:100%;padding:10px;background:#0a1626;color:#e6eefb;border:1px solid #263a55;border-radius:8px"><option value="empty">Empty room baseline</option><option value="standing">Person standing (label only)</option><option value="walking">Person walking / crossing (label only)</option><option value="object_moving">Other object moving (label only)</option></select></div>
 <div><div class="label">Trial label (optional)</div><input id="expLabel" placeholder="e.g. trial 1" maxlength="100" style="width:100%;padding:10px;background:#0a1626;color:#e6eefb;border:1px solid #263a55;border-radius:8px"></div>
 </div>
-<div class="row"><div><button id="expStart" onclick="startExperiment()">Start recording</button> <button id="expUpdate" onclick="updateExperiment()" disabled>Apply zone / condition</button> <button id="expStop" onclick="stopExperiment()" disabled>Stop recording</button></div><small id="expCount">0 recorded samples</small></div>
+<div class="row"><div class="action-group">
+<button id="expStart" onclick="startExperiment()">Start recording</button>
+<button id="expUpdate" onclick="updateExperiment()" disabled>Apply zone / condition</button>
+<button id="expStop" onclick="stopExperiment()" disabled>Stop recording</button>
+<button id="expExport" onclick="exportExperiment()" disabled>Export current experiment CSV</button>
+</div><small id="expCount">0 recorded samples</small></div>
+<p class="note" id="expActionHelp" aria-live="polite">Ready. Choose a zone and condition, then click <b>Start recording</b>. Nothing is recorded into the experiment until you start it.</p>
+<p class="note" id="expSessionInfo">No experiment session loaded.</p>
 <h3>Current session comparison</h3><div style="overflow-x:auto"><table><thead><tr><th>Zone</th><th>Condition</th><th>Samples</th><th>Average RSSI</th><th>Min / max</th><th>RSSI range</th><th>Avg variation</th><th>Shift vs empty baseline</th></tr></thead><tbody id="expRows"><tr><td colspan="8">Start a session to collect experiment data.</td></tr></tbody></table></div>
 <p class="note">Suggested protocol: record 2 minutes empty, then 10 walking crossings with the devices fixed, then repeat the empty baseline. Compare the average RSSI shift and signal range. Repeat the full sequence at least 3 times. A difference is evidence of a repeatable radio disturbance only—not proof of a human crossing.</p>
 </div>
@@ -246,17 +254,62 @@ async function experimentRequest(path,body){
  const data=await response.json();if(!response.ok)throw new Error(data.detail||'Experiment request failed');return data;
 }
 function experimentPayload(){return {zone:el('expZone').value.trim()||'Unlabelled zone',phase:el('expPhase').value,label:el('expLabel').value.trim()||null};}
+let experimentActionBusy=false;
+function setExperimentBusy(busy){
+ experimentActionBusy=busy;
+ ['expStart','expUpdate','expStop','expExport'].forEach(id=>{const node=el(id);if(node)node.dataset.busy=busy?'1':'0';});
+}
 async function startExperiment(){
- try{await experimentRequest('/api/experiment/start',experimentPayload());await refreshExperiment();}
- catch(e){el('expStatus').textContent=e.message;}
+ if(experimentActionBusy)return;
+ const payload=experimentPayload();
+ if(!payload.zone){el('expActionHelp').textContent='Enter a test zone before starting.';return;}
+ if(!window.confirm('Start a new experiment recording now? Only new MacBook RSSI samples will be added to this session.'))return;
+ setExperimentBusy(true);el('expActionHelp').textContent='Checking live Wi-Fi sample and starting recorder…';
+ try{
+  const live=await fetch('/api/status').then(r=>r.json());
+  if(live.rssi===null||live.rssi===undefined)throw new Error('No live RSSI reading is available. Check the MacBook Wi-Fi collector first.');
+  await experimentRequest('/api/experiment/start',payload);
+  el('expActionHelp').textContent='Recording started. Samples are being saved while this session remains active.';
+  await refreshExperiment();
+ }catch(e){el('expActionHelp').textContent='Could not start: '+e.message;el('expStatus').textContent=e.message;}
+ finally{setExperimentBusy(false);await refreshExperiment();}
 }
 async function updateExperiment(){
- try{await experimentRequest('/api/experiment/phase',experimentPayload());await refreshExperiment();}
- catch(e){el('expStatus').textContent=e.message;}
+ if(experimentActionBusy)return;
+ if(!window.confirm('Apply the selected zone / condition from this point onward? Previous samples will keep their original labels.'))return;
+ setExperimentBusy(true);
+ try{
+  await experimentRequest('/api/experiment/phase',experimentPayload());
+  el('expActionHelp').textContent='New zone / condition applied. Future samples will use the updated labels.';
+  await refreshExperiment();
+ }catch(e){el('expActionHelp').textContent='Could not update condition: '+e.message;el('expStatus').textContent=e.message;}
+ finally{setExperimentBusy(false);await refreshExperiment();}
 }
 async function stopExperiment(){
- try{await experimentRequest('/api/experiment/stop');await refreshExperiment();}
- catch(e){el('expStatus').textContent=e.message;}
+ if(experimentActionBusy)return;
+ if(!window.confirm('Stop recording this experiment? Recorded samples will remain saved and can still be exported.'))return;
+ setExperimentBusy(true);
+ try{
+  await experimentRequest('/api/experiment/stop');
+  el('expActionHelp').textContent='Recording stopped. Your samples are saved. You can now export the session CSV.';
+  await refreshExperiment();
+ }catch(e){el('expActionHelp').textContent='Could not stop: '+e.message;el('expStatus').textContent=e.message;}
+ finally{setExperimentBusy(false);await refreshExperiment();}
+}
+async function exportExperiment(){
+ if(experimentActionBusy)return;
+ setExperimentBusy(true);
+ try{
+  const response=await fetch('/api/experiment/export.csv');
+  if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.detail||'Export failed');}
+  const blob=await response.blob();
+  const url=URL.createObjectURL(blob);
+  const link=document.createElement('a');
+  link.href=url;link.download='wifisense-experiment.csv';
+  document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
+  el('expActionHelp').textContent='CSV export started. Check your browser downloads.';
+ }catch(e){el('expActionHelp').textContent='Export unavailable: '+e.message;}
+ finally{setExperimentBusy(false);await refreshExperiment();}
 }
 async function refreshExperiment(){
  try{
@@ -265,8 +318,14 @@ async function refreshExperiment(){
    fetch('/api/experiment/summary').then(r=>r.json())
   ]);
   el('expStatus').textContent=status.active?'Recording · '+status.zone+' · '+status.phase:'No active experiment';
-  el('expStart').disabled=!!status.active;el('expUpdate').disabled=!status.active;el('expStop').disabled=!status.active;
-  const total=summary.groups.reduce((n,g)=>n+g.samples,0);el('expCount').textContent=total+' recorded samples';
+  el('expStart').disabled=!!status.active||experimentActionBusy;
+  el('expUpdate').disabled=!status.active||experimentActionBusy;
+  el('expStop').disabled=!status.active||experimentActionBusy;
+  const total=summary.groups.reduce((n,g)=>n+g.samples,0);
+  el('expCount').textContent=total+' recorded samples';
+  el('expExport').disabled=total===0||experimentActionBusy;
+  el('expSessionInfo').textContent=status.session_id?'Session '+status.session_id+' · Started '+(status.started_at||'time unavailable')+(status.active?' · currently recording':' · stopped'):'No experiment session loaded.';
+  if(!status.active&&total===0)el('expActionHelp').textContent='Ready. Choose a zone and condition, then click Start recording. Nothing is being recorded into an experiment yet.';
   const emptyByZone=Object.fromEntries(summary.groups.filter(g=>g.phase==='empty').map(g=>[g.zone,g.avg_rssi]));
   el('expRows').innerHTML=summary.groups.length?summary.groups.map(g=>{
    const baseline=emptyByZone[g.zone],shift=baseline===undefined||g.avg_rssi===null?'—':(g.avg_rssi-baseline>=0?'+':'')+(g.avg_rssi-baseline).toFixed(2)+' dB';
