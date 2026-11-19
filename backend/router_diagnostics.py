@@ -55,7 +55,7 @@ def router_diagnostics():
     # Override with ROUTER_JIO_IP / ROUTER_TPLINK_IP if the LAN changes.
     targets = [
         {"id": "jio", "name": "JioAirFiber", "ip": os.getenv("ROUTER_JIO_IP", "192.168.31.1").strip()},
-        {"id": "tplink", "name": "TP-Link TL-WR850N", "ip": os.getenv("ROUTER_TPLINK_IP", "192.168.0.1").strip()},
+        {"id": "tplink", "name": "TP-Link TL-WR850N", "ip": os.getenv("ROUTER_TPLINK_IP", "192.168.31.70").strip()},
     ]
     arp = _arp_map()
     routers = []
@@ -75,7 +75,7 @@ def router_diagnostics():
         "routers": routers,
         "wds_status": {
             "value": "manual_check_required",
-            "instruction": "On TP-Link, open Advanced > Status > Wireless and read WDS Status. Run means the bridge is up.",
+            "instruction": "The inspected TL-WR850N V3 interface does not show a WDS Status field on Wireless > Advanced Settings. Network Map shows a wireless connection, but this does not expose WDS peer RSSI or CSI. Do not infer those measurements.",
         },
         "measurement_access": {
             "wds_rssi": "not_exposed_by_this_read_only_probe",
