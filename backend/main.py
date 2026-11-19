@@ -186,7 +186,9 @@ experiment_state = {"active": False, "session_id": None, "label": None, "zone": 
 # not CSI, object identity, or whole-room coverage.
 rssi_sensing = {"enabled": False, "calibrated": False, "baseline_rssi": None,
     "threshold_db": 4.0, "last_delta_db": None, "status": "Not calibrated",
-    "last_event_at": None, "events": deque(maxlen=30), "last_event_state": None}
+    "last_event_at": None, "events": deque(maxlen=30), "last_event_state": None,
+    "alert_active": False, "high_since": None, "low_since": None,
+    "confirmation_seconds": 6, "clear_seconds": 5}
 
 def run_cmd(args, timeout=4):
     try:
@@ -341,6 +343,10 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL,
             device_id TEXT NOT NULL, status TEXT NOT NULL, score REAL,
             changed_fraction REAL, presence_candidate INTEGER NOT NULL)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS signal_alert_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT NOT NULL,
+            event_type TEXT NOT NULL, rssi INTEGER NOT NULL, delta_db REAL NOT NULL,
+            threshold_db REAL NOT NULL, source TEXT NOT NULL)""")
         # Recover the latest session after a server restart. Never resume recording
         # automatically: preserve its samples but mark an interrupted session stopped.
         latest = c.execute("""SELECT session_id,started_at,stopped_at,zone,phase,label,active
@@ -409,18 +415,70 @@ def take_sample():
     with lock:
         if rssi_sensing["enabled"] and rssi_sensing["calibrated"] and rssi is not None:
             delta = round(abs(rssi - rssi_sensing["baseline_rssi"]), 1)
-            changed = delta >= rssi_sensing["threshold_db"]
+            threshold = float(rssi_sensing["threshold_db"])
+            now_dt = datetime.fromisoformat(timestamp)
             rssi_sensing["last_delta_db"] = delta
-            new_status = "RSSI changed — cause unknown" if changed else "Near baseline"
-            rssi_sensing["status"] = new_status
-            event_state = "change" if changed else "baseline"
-            if event_state != rssi_sensing["last_event_state"]:
-                rssi_sensing["events"].appendleft({
-                    "timestamp": timestamp, "status": new_status,
-                    "rssi": rssi, "delta_db": delta
-                })
+            event_to_store = None
+
+            if delta >= threshold:
+                rssi_sensing["low_since"] = None
+                if not rssi_sensing["alert_active"]:
+                    if rssi_sensing["high_since"] is None:
+                        rssi_sensing["high_since"] = timestamp
+                    elapsed = max(0.0, (now_dt - datetime.fromisoformat(
+                        rssi_sensing["high_since"])).total_seconds())
+                    if elapsed >= rssi_sensing["confirmation_seconds"]:
+                        rssi_sensing["alert_active"] = True
+                        rssi_sensing["status"] = "SIGNAL DISTURBANCE CANDIDATE — cause unknown"
+                        event_to_store = {
+                            "timestamp": timestamp, "event_type": "disturbance_candidate",
+                            "status": rssi_sensing["status"], "rssi": rssi,
+                            "delta_db": delta, "threshold_db": threshold,
+                            "source": "MacBook-to-associated-AP RSSI"
+                        }
+                    else:
+                        rssi_sensing["status"] = (
+                            f"Change pending confirmation · {int(elapsed)}/"
+                            f"{rssi_sensing['confirmation_seconds']} seconds"
+                        )
+                else:
+                    rssi_sensing["status"] = "SIGNAL DISTURBANCE CANDIDATE — monitoring"
+            else:
+                rssi_sensing["high_since"] = None
+                if rssi_sensing["alert_active"] and delta <= threshold * 0.6:
+                    if rssi_sensing["low_since"] is None:
+                        rssi_sensing["low_since"] = timestamp
+                    elapsed = max(0.0, (now_dt - datetime.fromisoformat(
+                        rssi_sensing["low_since"])).total_seconds())
+                    if elapsed >= rssi_sensing["clear_seconds"]:
+                        rssi_sensing["alert_active"] = False
+                        rssi_sensing["low_since"] = None
+                        rssi_sensing["status"] = "Signal returned near baseline"
+                        event_to_store = {
+                            "timestamp": timestamp, "event_type": "baseline_restored",
+                            "status": rssi_sensing["status"], "rssi": rssi,
+                            "delta_db": delta, "threshold_db": threshold,
+                            "source": "MacBook-to-associated-AP RSSI"
+                        }
+                    else:
+                        rssi_sensing["status"] = "Candidate active · checking recovery"
+                elif rssi_sensing["alert_active"]:
+                    rssi_sensing["low_since"] = None
+                    rssi_sensing["status"] = "SIGNAL DISTURBANCE CANDIDATE — monitoring"
+                else:
+                    rssi_sensing["low_since"] = None
+                    rssi_sensing["status"] = "Near baseline"
+
+            if event_to_store:
+                rssi_sensing["events"].appendleft(event_to_store)
                 rssi_sensing["last_event_at"] = timestamp
-                rssi_sensing["last_event_state"] = event_state
+                rssi_sensing["last_event_state"] = event_to_store["event_type"]
+                with sqlite3.connect(DB_PATH) as c:
+                    c.execute("""INSERT INTO signal_alert_events
+                        (timestamp,event_type,rssi,delta_db,threshold_db,source)
+                        VALUES(?,?,?,?,?,?)""",
+                        (timestamp, event_to_store["event_type"], rssi, delta,
+                         threshold, event_to_store["source"]))
     with lock:
         exp = dict(experiment_state)
     if exp["active"] and rssi is not None:
@@ -549,10 +607,22 @@ def human_detection_status():
 @app.get("/api/sensing/status")
 def sensing_status():
     with lock:
-        return {**{k: v for k, v in rssi_sensing.items() if k != "events"},
-                "events": list(rssi_sensing["events"]),
-                "measurement": "MacBook RSSI only",
-                "scope_warning": "Changes are measured only at the MacBook receiver; this is not whole-room object detection."}
+        result = {k: v for k, v in rssi_sensing.items() if k != "events"}
+    with sqlite3.connect(DB_PATH) as c:
+        c.row_factory = sqlite3.Row
+        rows = c.execute("""SELECT timestamp,event_type,rssi,delta_db,threshold_db,source
+                            FROM signal_alert_events ORDER BY id DESC LIMIT 30""").fetchall()
+    events = []
+    for row in rows:
+        item = dict(row)
+        item["status"] = ("SIGNAL DISTURBANCE CANDIDATE — cause unknown"
+                          if item["event_type"] == "disturbance_candidate"
+                          else "Signal returned near baseline")
+        events.append(item)
+    return {**result, "events": events,
+            "measurement": "MacBook-to-associated-AP RSSI only",
+            "scope_warning": "A sustained RSSI change is a radio-disturbance candidate, not confirmed human detection.",
+            "alert_rule": "Threshold exceeded continuously for 6 seconds; clear after 5 seconds at or below 60% of threshold."}
 
 @app.post("/api/sensing/calibrate")
 def sensing_calibrate():
@@ -566,7 +636,8 @@ def sensing_calibrate():
         rssi_sensing.update({"enabled": True, "calibrated": True,
             "baseline_rssi": round(baseline, 1), "threshold_db": threshold,
             "last_delta_db": 0.0, "status": "Calibrated — monitoring signal changes",
-            "last_event_at": None, "last_event_state": "baseline"})
+            "last_event_at": None, "last_event_state": "baseline",
+            "alert_active": False, "high_since": None, "low_since": None})
         rssi_sensing["events"].clear()
     return sensing_status()
 
@@ -574,7 +645,8 @@ def sensing_calibrate():
 def sensing_stop():
     with lock:
         rssi_sensing.update({"enabled": False, "status": "Monitoring stopped",
-                             "last_event_state": None})
+                             "last_event_state": None, "high_since": None,
+                             "low_since": None, "alert_active": False})
     return sensing_status()
 
 @app.get("/api/sensing/events")
