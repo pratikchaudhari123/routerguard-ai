@@ -356,9 +356,9 @@ def take_sample():
             recent = list(samples)[-15:]
             variation = round(max(recent) - min(recent), 1)
             if variation >= 8:
-                activity, level = "High signal variation — possible activity", "warning"
+                activity, level = "High RSSI variation — cause unknown", "warning"
             elif variation >= 4:
-                activity, level = "Signal variation observed", "notice"
+                activity, level = "RSSI variation observed — cause unknown", "notice"
             else:
                 activity, level = "Signal relatively stable", "good"
         else:
@@ -373,7 +373,7 @@ def take_sample():
             delta = round(abs(rssi - rssi_sensing["baseline_rssi"]), 1)
             changed = delta >= rssi_sensing["threshold_db"]
             rssi_sensing["last_delta_db"] = delta
-            new_status = "Signal change observed near receiver" if changed else "Near baseline"
+            new_status = "RSSI changed — cause unknown" if changed else "Near baseline"
             rssi_sensing["status"] = new_status
             event_state = "change" if changed else "baseline"
             if event_state != rssi_sensing["last_event_state"]:
