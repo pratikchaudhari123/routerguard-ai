@@ -22,7 +22,7 @@ td,th{text-align:left;padding:10px;border-bottom:1px solid #263a55;font-size:13p
 <div class="sub">Live Wi-Fi signal experiment · MacBook receiver measurements</div><p class="note"><b>Measurement scope:</b> RSSI is read at this MacBook from its currently connected access point. It is not the JioAirFiber ↔ TP-Link WDS link. Signal changes are movement candidates only, not confirmed human detection.</p></div>
 <button onclick="sampleNow()">Sample now</button></header>
 <section class="grid">
-<div class="card"><div class="label">Connected network</div><div class="value" id="ssid">Checking…</div><small id="iface">—</small></div>
+<div class="card"><div class="label">Connected network</div><div class="value" id="ssid">Checking…</div><small id="iface">—</small><small id="bssid">BSSID: waiting</small></div>
 <div class="card"><div class="label">Signal strength</div><div class="value" id="rssi">—</div><small>RSSI in dBm</small></div>
 <div class="card"><div class="label">Recent variation</div><div class="value" id="variation">—</div><small>Range over recent samples</small></div>
 <div class="card"><div class="label">Signal interpretation</div><div class="value" style="font-size:19px" id="activity">Waiting…</div><small id="updated">—</small></div>
@@ -330,6 +330,7 @@ async function refresh(){
  const s=await(await fetch('/api/status')).json();
  el('ssid').textContent=s.ssid|| (s.connected?'Connected Wi-Fi':'No signal data exposed');
  el('iface').textContent=s.interface||'Wi-Fi interface not identified';
+ el('bssid').textContent='BSSID: '+(s.bssid||'not exposed by current driver');
  el('rssi').textContent=s.rssi===null?'Unavailable':s.rssi+' dBm';
  el('variation').textContent=s.variation_db===null?'—':s.variation_db+' dB';
  el('activity').textContent=s.activity||'—';el('activity').className='value '+(s.activity_level||'');
