@@ -39,7 +39,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
-uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Open the dashboard:
@@ -49,7 +49,7 @@ Open the dashboard:
 
 If the MacBook firewall asks whether Python may accept incoming connections, allow it only on the trusted home network while testing.
 
-## Real CSI receiver workflow\n\nThe dashboard includes a live CSI receiver panel. It polls the CSI and presence-candidate status endpoints, shows receiver freshness, subcarrier count, signal-change score, empty-room calibration progress, and candidate events. The receiver is considered online only if a real CSI packet arrived within the last 10 seconds.\n\n1. Start the MacBook app and identify its current LAN IPv4 address (for example `ipconfig getifaddr en0`).\n2. Confirm the ESP32-S3 and MacBook are on the same LAN; avoid guest Wi-Fi/client isolation.\n3. Run `idf.py menuconfig` in the receiver project and set the Wi-Fi SSID, password, API URL (`http://MACBOOK_LAN_IP:8000/api/csi`) and device ID under **WiFiSense receiver configuration**. Never commit Wi-Fi credentials or `sdkconfig`.\n4. Build and flash with `idf.py build` and `idf.py -p PORT flash monitor`.\n5. Wait for **CSI receiver connected**, a recent packet timestamp, and a non-zero subcarrier count.\n6. Keep the area empty and still, then start **Calibrate empty area (60 real CSI packets)**. Wait for baseline completion.\n7. Walk across the router-to-receiver path and compare repeated trials with empty-room and non-human disturbance trials.\n\nIf the receiver remains offline, check serial logs, MacBook LAN IP, macOS firewall access to port 8000, Wi-Fi credentials, and whether the AP supplies CSI on ping replies. This method is not guaranteed to work with every AP and has not yet been physically validated with your JioAirFiber. The detector requires CSI deviation to persist for at least 5 seconds before opening a presence/movement candidate, and clears the candidate after 5 seconds near baseline. This is a temporal false-spike filter, not a validated human classifier; non-human disturbances can still trigger it. CSI samples, human-candidate events, and ordinary Wi-Fi samples are automatically retained for 7 days. Multi-receiver localization remains separate and requires at least two CSI receivers.\n\n## Router diagnostics
+## Real CSI receiver workflow\n\nThe dashboard includes a live CSI receiver panel. It polls the CSI and presence-candidate status endpoints, shows receiver freshness, subcarrier count, signal-change score, empty-room calibration progress, and candidate events. The receiver is considered online only if a real CSI packet arrived within the last 10 seconds.\n\n1. Start the MacBook app and identify its current LAN IPv4 address (for example `ipconfig getifaddr en0`).\n2. Confirm the ESP32-S3 and MacBook are on the same LAN; avoid guest Wi-Fi/client isolation.\n3. Run `idf.py menuconfig` in the receiver project and set the Wi-Fi SSID, password, API URL (`http://MACBOOK_LAN_IP:8000/api/csi`) and device ID under **WiFiSense receiver configuration**. Never commit Wi-Fi credentials or `sdkconfig`.\n4. Build and flash with `idf.py build` and `idf.py -p PORT flash monitor`.\n5. Wait for **CSI receiver connected**, a recent packet timestamp, and a non-zero subcarrier count.\n6. Keep the area empty and still, then start **Calibrate empty area (60 real CSI packets)**. Wait for baseline completion.\n7. Walk across the router-to-receiver path and compare repeated trials with empty-room and non-human disturbance trials.\n\nIf the receiver remains offline, check serial logs, MacBook LAN IP, macOS firewall access to port 8000, Wi-Fi credentials, and whether the AP supplies CSI on ping replies. This method is not guaranteed to work with every AP and has not yet been physically validated with your JioAirFiber. The detector requires CSI deviation to persist for at least 5 seconds before opening a presence/movement candidate, and clears the candidate after 5 seconds near baseline. This is a temporal false-spike filter, not a validated human classifier; non-human disturbances can still trigger it. The application does not automatically delete historical samples, CSI records, or movement-candidate events. Back up `data/wifisense.db` before major updates. Multi-receiver localization remains separate and requires at least two CSI receivers.\n\n## Router diagnostics
 
 The dashboard's **Two-router hardware diagnostics** section checks these previously observed addresses:
 
@@ -91,7 +91,8 @@ The RSSI can change because of people, objects, device movement, walls, multipat
 
 ## Data and privacy
 
-- Local database: `data/wifisense.db`
+- Local database: `data/wifisense.db` (resolved relative to the project directory, not the shell working directory).
+- Historical records are preserved; no automatic seven-day deletion runs.
 - The app does not capture Wi-Fi payloads, deauthenticate clients, change router settings, or attempt router login.
 - Router diagnostics are limited to the two configured IP addresses.
 - No router passwords or admin session tokens are needed by the application.
