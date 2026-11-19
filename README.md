@@ -122,3 +122,8 @@ See [docs/MOTION_DETECTION_GUIDE.md](docs/MOTION_DETECTION_GUIDE.md) for the con
 ## Associated access-point identity
 
 The live collector records the MacBook's associated BSSID when macOS exposes it. This helps identify which access point the MacBook is actually connected to, but it is **not** the Jio-to-TP-Link WDS peer measurement. The BSSID is stored per sample and is migrated into existing SQLite databases without deleting historical rows. If the driver does not expose a BSSID, the field remains empty rather than being guessed.
+
+
+## Important topology note for the Jio + TP-Link room experiment
+
+The ESP32-S3 firmware joins one selected access point and captures CSI from frames transmitted by that associated AP. If it joins the TP-Link SSID, its CSI describes the **TP-Link-to-ESP32 link**; if it joins the Jio SSID, it describes the **Jio-to-ESP32 link**. It does not passively read the private Jio-to-TP-Link WDS link and does not expose the TP-Link's WDS receive RSSI. Therefore this receiver is a separate CSI sensing link, not a software workaround for unavailable WDS telemetry. Keep the AP identity (BSSID) and receiver position fixed during trials. A single receiver supports experimental movement/presence candidates only; reliable six-zone localization requires multiple spatially separated receivers and labelled validation data.
