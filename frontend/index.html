@@ -22,13 +22,34 @@ td,th{text-align:left;padding:11px 10px;border-bottom:1px solid #263a55;font-siz
 .note{line-height:1.65;font-size:13px;color:#aebfd4}.hero-diagram{padding:18px 20px}.diagram-wrap{width:100%;overflow:hidden}.diagram-wrap svg{display:block;width:100%;min-width:560px;height:auto}.diagram-caption{display:flex;gap:12px;flex-wrap:wrap;margin-top:12px}.legend{font-size:12px;color:#aebfd4;display:flex;align-items:center;gap:7px}.dot{width:9px;height:9px;border-radius:50%;display:inline-block}
 #chart{background:linear-gradient(180deg,rgba(22,42,67,.55),rgba(8,19,33,.2));border-radius:12px}
 #routerLinkGate{background:linear-gradient(120deg,rgba(105,55,31,.22),rgba(17,30,48,.96) 65%);border-color:#80583a!important}
+.quick-nav{position:sticky;top:0;z-index:20;display:flex;gap:8px;overflow-x:auto;padding:10px 12px;margin:0 0 16px;background:rgba(7,16,29,.92);backdrop-filter:blur(14px);border:1px solid #263d5b;border-radius:14px}
+.quick-nav a{flex:0 0 auto;color:#c9d9ef;text-decoration:none;font-size:12px;font-weight:700;padding:9px 12px;border-radius:9px;background:#12243a}
+.quick-nav a:hover,.quick-nav a:focus{background:#21436a;color:#fff;outline:2px solid #60a5fa;outline-offset:1px}
+.section-kicker{display:flex;align-items:center;gap:8px;color:#8eabc9;font-size:11px;text-transform:uppercase;letter-spacing:.12em;font-weight:800;margin:4px 0 10px}
+.overview-strip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 18px}
+.overview-tile{padding:15px 16px;border:1px solid #294563;border-radius:14px;background:linear-gradient(145deg,#132840,#0c1b2e);min-width:0}
+.overview-tile strong{display:block;font-size:14px;margin:5px 0;overflow-wrap:anywhere}
+.overview-tile span{font-size:11px;color:#9eb2ca;line-height:1.5}
+.card[id]{scroll-margin-top:76px}
+.card h2{line-height:1.35}
+.card .row{align-items:flex-start}
+button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid #93c5fd;outline-offset:3px}
+@media(max-width:650px){.overview-strip{grid-template-columns:1fr}.quick-nav{top:0;margin-inline:-2px}.quick-nav a{font-size:11px;padding:8px 10px}}
 @media(max-width:650px){body{padding:15px 12px 40px}header{align-items:flex-start}h1{font-size:25px}.card{padding:16px;border-radius:15px}.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.value{font-size:22px}td,th{padding:8px 7px;font-size:12px}.hero-diagram{padding:14px}.sub{font-size:13px}}
 @media(max-width:390px){.grid{grid-template-columns:1fr}}
 </style></head><body>
 <header><div><h1>WiFiSense <span class="status">LIVE EXPERIMENT</span></h1>
 <div class="sub">Live Wi-Fi signal experiment · MacBook receiver measurements</div><p class="note"><b>Measurement scope:</b> RSSI is read at this MacBook from its currently connected access point. It is not the JioAirFiber ↔ TP-Link WDS link. Signal changes are movement candidates only, not confirmed human detection.</p></div>
 <button onclick="sampleNow()">Sample now</button></header>
-<section class="card hero-diagram">
+<nav class="quick-nav" aria-label="Dashboard sections">
+ <a href="#overview">Overview</a><a href="#experiment">Experiment</a><a href="#signal">Live signal</a><a href="#routerDiagnostics">Routers</a><a href="#csiPanel">CSI receiver</a><a href="#coverageSurvey">Room survey</a>
+</nav>
+<div class="overview-strip" aria-label="Measurement source status">
+ <div class="overview-tile"><div class="label">MacBook receiver</div><strong class="good">Live RSSI available</strong><span>Measures this MacBook to its associated access point only.</span></div>
+ <div class="overview-tile"><div class="label">Jio ↔ TP-Link WDS</div><strong class="notice">Telemetry unverified</strong><span>Router-link baseline stays blocked until real peer telemetry is verified.</span></div>
+ <div class="overview-tile"><div class="label">CSI sensing</div><strong class="notice">Receiver required</strong><span>No CSI-based movement analysis until real receiver packets arrive.</span></div>
+</div>
+<section class="card hero-diagram" id="setup">
  <div class="row"><div><div class="label">Your experiment layout</div><h2 style="margin-top:7px">Keep the laptop outside the walking zone</h2></div><span class="status good">Setup guide</span></div>
  <div class="diagram-wrap">
   <svg viewBox="0 0 1000 300" role="img" aria-label="Schematic: Jio router and TP-Link router with a walking test area between them and a MacBook outside the area, still within Wi-Fi coverage.">
@@ -60,13 +81,13 @@ td,th{text-align:left;padding:11px 10px;border-bottom:1px solid #263a55;font-siz
  <p class="note" id="routerCalibrationBlockReason">Calibration is blocked until a real Jio-to-TP-Link WDS RSSI or CSI source is verified. Once available, keep both routers fixed, leave the monitored area empty and still for 10 minutes, and store timestamped real measurements only. Then run labelled movement and non-human disturbance trials.</p>
  <p class="note">This gate is intentionally closed right now. Router reachability, a connected WDS map line, client RSSI, and packet counters do not by themselves prove that WDS peer RSSI or CSI is available.</p>
 </div>
-<section class="grid">
+<section class="grid" id="overview">
 <div class="card"><div class="label">Connected network</div><div class="value" id="ssid">Checking…</div><small id="iface">—</small><small id="bssid">BSSID: waiting</small></div>
 <div class="card"><div class="label">Signal strength</div><div class="value" id="rssi">—</div><small>RSSI in dBm</small></div>
 <div class="card"><div class="label">Recent variation</div><div class="value" id="variation">—</div><small>Range over recent samples</small></div>
 <div class="card"><div class="label">Signal interpretation</div><div class="value" style="font-size:19px" id="activity">Waiting…</div><small id="updated">—</small></div>
 </section>
-<div class="card"><div class="row"><h2>Live RSSI signal</h2><small id="source">Reading local Wi-Fi diagnostics</small></div>
+<div class="card" id="signal"><div class="row"><h2>Live RSSI signal</h2><small id="source">Reading local Wi-Fi diagnostics</small></div>
 <canvas id="chart" width="1100" height="270"></canvas><small>Lower (more negative) values mean weaker received signal.</small></div>
 
 
@@ -83,7 +104,7 @@ td,th{text-align:left;padding:11px 10px;border-bottom:1px solid #263a55;font-siz
 <p class="note">This verifies data collection and recording only. It does not verify person detection, object detection, or room localization.</p>
 </div>
 
-<div class="card">
+<div class="card" id="experiment">
 <div class="row"><h2>Movement experiment recorder</h2><span class="status" id="expStatus">No active experiment</span></div>
 <p class="note"><b>Controlled crossing test:</b> Keep both routers fixed. Place the MacBook outside the monitored walking path and outside the area being tested, but still within reliable Wi-Fi coverage so it remains connected to the same AP/BSSID. Record 2 minutes of <b>Empty room baseline</b>, switch to <b>Person walking / crossing</b> for 10 crossings, then record another empty phase. Repeat at least 3 times. This measures only the MacBook-to-associated-AP RSSI; it is not Jio-to-TP-Link WDS RSSI and may not respond to a crossing. A signal change is a radio-disturbance candidate, never confirmed human detection.</p>
 <div class="grid">
@@ -113,7 +134,7 @@ td,th{text-align:left;padding:11px 10px;border-bottom:1px solid #263a55;font-siz
 <div class="row"><div><button onclick="calibrateSensing()">Calibrate empty area &amp; start</button> <button onclick="stopSensing()">Stop test</button></div><small id="senseUpdated">Waiting for calibration</small></div>
 <h3>Signal-change events</h3><div style="overflow-x:auto"><table><thead><tr><th>Time</th><th>Reading</th><th>Change from baseline</th><th>Interpretation</th></tr></thead><tbody id="senseEvents"><tr><td colspan="4">No events yet.</td></tr></tbody></table></div>
 </div>
-<div class="card">
+<div class="card" id="routerDiagnostics">
  <div class="row"><h2>Two-router hardware diagnostics</h2><span class="status" id="routerDiagStatus">Checking routers…</span></div>
  <p class="note">Read-only checks for the existing JioAirFiber → TP-Link TL-WR850N WDS setup. This section checks IP reachability, web-management ports, and MAC addresses visible in the MacBook ARP table. It does not log in to either router or change settings.</p>
  <div class="grid">
@@ -145,7 +166,7 @@ td,th{text-align:left;padding:11px 10px;border-bottom:1px solid #263a55;font-siz
  <h3>Candidate events</h3><div style="overflow-x:auto"><table><thead><tr><th>Time</th><th>Event</th><th>Score</th><th>Changed subcarriers</th></tr></thead><tbody id="humanEvents"><tr><td colspan="4">No CSI candidate events yet.</td></tr></tbody></table></div>
  <p class="note"><b>Connection:</b> ESP32-S3 must join the same non-isolated LAN as this MacBook and POST to <code>http://MACBOOK_LAN_IP:8000/api/csi</code>. USB is for flashing and power; CSI data travels over Wi-Fi. The Jio/TP-Link routers remain unchanged.</p>
 </div>
-<div class="card">
+<div class="card" id="coverageSurvey">
 <div class="row"><h2>Measured Wi-Fi room coverage survey</h2><span class="status" id="fieldState">Waiting for survey points</span></div>
 <p class="note">Enter your room size, walk to a physical point, and record the RSSI measured by this MacBook. Repeat across the room. The heatmap is interpolated only from the points you measure; it is not a live radar or a person tracker.</p>
 <div class="grid">
