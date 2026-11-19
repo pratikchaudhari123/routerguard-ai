@@ -72,16 +72,16 @@ td,th{text-align:left;padding:10px;border-bottom:1px solid #263a55;font-size:13p
  <p class="note">Read-only checks for the existing JioAirFiber → TP-Link TL-WR850N WDS setup. This section checks IP reachability, web-management ports, and MAC addresses visible in the MacBook ARP table. It does not log in to either router or change settings.</p>
  <div class="grid">
   <div><div class="label">JioAirFiber · 192.168.31.1</div><div class="value" id="jioReach" style="font-size:19px">Checking…</div><small id="jioDetails">—</small></div>
-  <div><div class="label">TP-Link TL-WR850N · 192.168.0.1</div><div class="value" id="tpReach" style="font-size:19px">Checking…</div><small id="tpDetails">—</small></div>
+  <div><div class="label">TP-Link TL-WR850N · 192.168.31.70</div><div class="value" id="tpReach" style="font-size:19px">Checking…</div><small id="tpDetails">—</small></div>
  </div>
  <h3>Measurement access</h3>
  <table><tbody>
-  <tr><th>WDS bridge state</th><td id="wdsReadout">Manual check required in TP-Link Advanced → Status → Wireless.</td></tr>
+  <tr><th>WDS bridge state</th><td id="wdsReadout">Inspect TP-Link Settings → Wireless → Connect to Network and Network Map; no WDS telemetry field has been verified.</td></tr>
   <tr><th>Router-to-router RSSI</th><td id="wdsRssiReadout">Not measured; accessible WDS RSSI has not been confirmed.</td></tr>
   <tr><th>CSI data</th><td id="csiReadout">No CSI feed is exposed by this diagnostic endpoint.</td></tr>
   <tr><th>MacBook RSSI</th><td>Separate MacBook-to-associated-access-point measurement; not the WDS link.</td></tr>
  </tbody></table>
- <p class="note"><b>Manual confirmation:</b> Open <code>http://192.168.0.1</code> → <b>Advanced → Status → Wireless</b>. Record the exact <b>WDS Status</b> value. TP-Link says <code>Run</code> means the bridge is established. Do not change settings or update firmware during this test.</p>
+ <p class="note"><b>Manual confirmation:</b> Open <code>http://192.168.31.70</code> → <b>Settings → Wireless → Connect to Network</b> to inspect the upstream SSID, then inspect <b>Network Map</b>. The wireless connection line indicates topology/connectivity only; this firmware page does not expose verified WDS peer RSSI or CSI. Do not change settings or update firmware during this test.</p>
  <div class="row"><small id="routerDiagUpdated">Waiting for diagnostics</small><button onclick="refreshRouterDiagnostics()">Run checks again</button></div>
  <p class="note">Reachability or WDS status proves connectivity only. It does not prove that the router exposes upstream RSSI or CSI. The project will not label RSSI changes as human detection.</p>
 </div>
