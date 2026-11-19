@@ -21,6 +21,17 @@ td,th{text-align:left;padding:10px;border-bottom:1px solid #263a55;font-size:13p
 <header><div><h1>WiFiSense <span class="status">LIVE EXPERIMENT</span></h1>
 <div class="sub">Live Wi-Fi signal experiment · MacBook receiver measurements</div><p class="note"><b>Measurement scope:</b> RSSI is read at this MacBook from its currently connected access point. It is not the JioAirFiber ↔ TP-Link WDS link. Signal changes are movement candidates only, not confirmed human detection.</p></div>
 <button onclick="sampleNow()">Sample now</button></header>
+<div class="card" id="routerLinkGate" style="border-color:#8a5b36">
+ <div class="row"><h2>Primary sensing path · JioAirFiber ↔ TP-Link</h2><span class="status warning" id="routerLinkGateStatus">Telemetry not verified</span></div>
+ <p class="note"><b>Critical measurement rule:</b> We must obtain actual RSSI or CSI measured on the JioAirFiber-to-TP-Link WDS link. The TP-Link Statistics reading of <b>-48 dBm</b> currently observed is the MacBook wireless-client signal, not router-to-router RSSI. MacBook RSSI must never be substituted for the WDS measurement.</p>
+ <div class="grid">
+  <div><div class="label">Router-link telemetry source</div><div class="value" id="routerLinkSource" style="font-size:17px">Not verified</div></div>
+  <div><div class="label">10-minute empty-room baseline</div><div class="value" id="routerBaselineStatus" style="font-size:17px">Blocked</div></div>
+  <div><div class="label">Calibration eligibility</div><div class="value" id="routerCalibrationEligibility" style="font-size:17px">Not eligible</div></div>
+ </div>
+ <p class="note" id="routerCalibrationBlockReason">Calibration is blocked until a real Jio-to-TP-Link WDS RSSI or CSI source is verified. Once available, keep both routers fixed, leave the monitored area empty and still for 10 minutes, and store timestamped real measurements only. Then run labelled movement and non-human disturbance trials.</p>
+ <p class="note">This gate is intentionally closed right now. Router reachability, a connected WDS map line, client RSSI, and packet counters do not by themselves prove that WDS peer RSSI or CSI is available.</p>
+</div>
 <section class="grid">
 <div class="card"><div class="label">Connected network</div><div class="value" id="ssid">Checking…</div><small id="iface">—</small><small id="bssid">BSSID: waiting</small></div>
 <div class="card"><div class="label">Signal strength</div><div class="value" id="rssi">—</div><small>RSSI in dBm</small></div>
@@ -317,6 +328,12 @@ async function refreshRouterDiagnostics(){
   el('wdsReadout').textContent=d.wds_status.instruction;
   el('wdsRssiReadout').textContent=d.measurement_access.wds_rssi;
   el('csiReadout').textContent=d.measurement_access.csi;
+  const gate=d.measurement_access;
+  el('routerLinkGateStatus').textContent=gate.router_link_telemetry_verified?'Verified source available':'Telemetry not verified';
+  el('routerLinkSource').textContent=gate.router_link_telemetry_source||'Not verified';
+  el('routerBaselineStatus').textContent=gate.baseline_plan?.status==='ready'?'Ready to start':'Blocked';
+  el('routerCalibrationEligibility').textContent=gate.calibration_eligible?'Eligible':'Not eligible';
+  el('routerCalibrationBlockReason').textContent=gate.calibration_block_reason||'No verified router-link measurement source.';
   el('routerDiagStatus').textContent='Read-only checks completed';
   el('routerDiagUpdated').textContent='Last checked '+new Date(d.checked_at).toLocaleTimeString();
  }catch(e){
