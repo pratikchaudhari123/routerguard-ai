@@ -185,10 +185,14 @@ experiment_state = {"active": False, "session_id": None, "label": None, "zone": 
 # RSSI-only exploratory monitor. It measures changes at the MacBook receiver,
 # not CSI, object identity, or whole-room coverage.
 rssi_sensing = {"enabled": False, "calibrated": False, "baseline_rssi": None,
-    "threshold_db": 4.0, "last_delta_db": None, "status": "Not calibrated",
-    "last_event_at": None, "events": deque(maxlen=30), "last_event_state": None,
+    "threshold_db": 3.0, "baseline_mad_db": None, "last_delta_db": None,
+    "last_velocity_db": None, "detection_score": 0.0, "high_count": 0,
+    "status": "Not calibrated", "last_event_at": None,
+    "events": deque(maxlen=30), "last_event_state": None,
     "alert_active": False, "high_since": None, "low_since": None,
-    "confirmation_seconds": 6, "clear_seconds": 5}
+    "confirmation_seconds": 4, "clear_seconds": 5}
+rssi_delta_window = deque(maxlen=3)
+rssi_previous_sample = None
 
 def run_cmd(args, timeout=4):
     try:
@@ -412,22 +416,35 @@ def take_sample():
     with lock:
         state.update(result)
         state["history"] = list(samples)
+    global rssi_previous_sample
     with lock:
         if rssi_sensing["enabled"] and rssi_sensing["calibrated"] and rssi is not None:
-            delta = round(abs(rssi - rssi_sensing["baseline_rssi"]), 1)
+            baseline = float(rssi_sensing["baseline_rssi"])
+            delta = round(abs(rssi - baseline), 1)
             threshold = float(rssi_sensing["threshold_db"])
+            velocity = (round(abs(rssi - rssi_previous_sample), 1)
+                        if rssi_previous_sample is not None else 0.0)
+            rssi_previous_sample = rssi
+            rssi_delta_window.append(delta)
+            high_count = sum(1 for value in rssi_delta_window if value >= threshold)
+            extreme_spike = delta >= threshold * 2.0
+            candidate_now = high_count >= 2 or extreme_spike
+            score = min(100.0, round(
+                30.0 * min(delta / max(threshold, 0.1), 2.0)
+                + 20.0 * min(velocity / max(threshold, 0.1), 2.0), 1))
+            rssi_sensing.update({"last_delta_db": delta, "last_velocity_db": velocity,
+                                 "detection_score": score, "high_count": high_count})
             now_dt = datetime.fromisoformat(timestamp)
-            rssi_sensing["last_delta_db"] = delta
             event_to_store = None
 
-            if delta >= threshold:
+            if candidate_now:
                 rssi_sensing["low_since"] = None
                 if not rssi_sensing["alert_active"]:
                     if rssi_sensing["high_since"] is None:
                         rssi_sensing["high_since"] = timestamp
                     elapsed = max(0.0, (now_dt - datetime.fromisoformat(
                         rssi_sensing["high_since"])).total_seconds())
-                    if elapsed >= rssi_sensing["confirmation_seconds"]:
+                    if extreme_spike or elapsed >= rssi_sensing["confirmation_seconds"]:
                         rssi_sensing["alert_active"] = True
                         rssi_sensing["status"] = "SIGNAL DISTURBANCE CANDIDATE — cause unknown"
                         event_to_store = {
@@ -621,21 +638,27 @@ def sensing_status():
         events.append(item)
     return {**result, "events": events,
             "measurement": "MacBook-to-associated-AP RSSI only",
-            "scope_warning": "A sustained RSSI change is a radio-disturbance candidate, not confirmed human detection.",
-            "alert_rule": "Threshold exceeded continuously for 6 seconds; clear after 5 seconds at or below 60% of threshold."}
+            "scope_warning": "A signal disturbance is not proof of a person or crossing. Validate against labelled walking and empty-room trials.",
+            "detector_features": ["robust MAD calibration", "RSSI deviation", "sample-to-sample velocity", "2-of-3 sample confirmation", "extreme-spike override", "recovery hysteresis"],
+            "alert_rule": "Alert after 2 of the last 3 samples exceed threshold, or immediately for a 2x-threshold spike; clear after 5 seconds at or below 60% of threshold."}
 
 @app.post("/api/sensing/calibrate")
 def sensing_calibrate():
     values = [v for v in list(samples)[-30:] if isinstance(v, (int, float))]
     if len(values) < 5:
         raise HTTPException(status_code=409, detail="Need at least 5 RSSI samples. Wait 10 seconds and retry.")
-    baseline = statistics.fmean(values)
-    spread = statistics.pstdev(values) if len(values) > 1 else 0.0
-    threshold = round(max(4.0, spread * 3.0), 1)
+    baseline = statistics.median(values)
+    deviations = [abs(value - baseline) for value in values]
+    mad = statistics.median(deviations)
+    robust_sigma = 1.4826 * mad
+    threshold = round(max(3.0, robust_sigma * 2.5), 1)
     with lock:
+        rssi_delta_window.clear()
         rssi_sensing.update({"enabled": True, "calibrated": True,
-            "baseline_rssi": round(baseline, 1), "threshold_db": threshold,
-            "last_delta_db": 0.0, "status": "Calibrated — monitoring signal changes",
+            "baseline_rssi": round(baseline, 1), "baseline_mad_db": round(mad, 2),
+            "threshold_db": threshold, "last_delta_db": 0.0,
+            "last_velocity_db": 0.0, "detection_score": 0.0, "high_count": 0,
+            "status": "Calibrated — monitoring signal disturbances",
             "last_event_at": None, "last_event_state": "baseline",
             "alert_active": False, "high_since": None, "low_since": None})
         rssi_sensing["events"].clear()
