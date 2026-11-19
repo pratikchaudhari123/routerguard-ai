@@ -47,3 +47,32 @@ Research-grade Wi-Fi sensing generally uses CSI (Channel State Information), whi
 
 ## Data and privacy
 Samples are stored locally in `data/wifisense.db`. The app does not scan other devices, capture payloads, deauthenticate clients, or change router settings.
+
+
+## Dual-router RSSI experiment (feature branch)
+
+The `feature/dual-router-rssi-collection` branch adds a concurrent collector for two
+router-provided JSON RSSI endpoints. It polls the configured main router (named
+JioFiber by default) and second router in parallel every 2 seconds, stores each
+reading and status in `data/wifisense.db`, and exposes:
+
+- `GET /api/routers/status` — latest reading/status for both routers.
+- `GET /api/routers/history?limit=120` — timestamped router readings.
+
+Copy `.env.example` to `.env` and configure
+`MAIN_ROUTER_RSSI_URL` and `SECOND_ROUTER_RSSI_URL` only after confirming
+that each router exposes a read-only JSON endpoint containing its own RSSI in dBm.
+The JSON field defaults to `rssi`; nested fields can be configured, for example
+`radio.signal.rssi`. If an endpoint requires a bearer token, set its matching
+`*_RSSI_TOKEN` variable. Do not commit real tokens or passwords.
+
+**JioFiber compatibility is not yet verified.** JioFiber firmware does not have
+a universal documented RSSI endpoint. An empty endpoint is reported as
+`not_configured`; failed requests are reported as `unavailable`. The app never
+fabricates readings or substitutes zero. The MacBook's own RSSI is a separate
+measurement and is not mislabeled as either router's RSSI.
+
+This branch adds the collection interface and synchronized storage, not a
+confirmed JioFiber adapter. We need the exact JioFiber model/firmware and
+second-router model, or a sanitized read-only API response, to implement and
+validate their actual RSSI access.
