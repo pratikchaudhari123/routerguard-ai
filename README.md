@@ -10,7 +10,7 @@ This branch is configured for the current experiment:
 ## Important: what this version does and does not do
 
 ### It does
-- Read the MacBook's own Wi-Fi RSSI through Apple CoreWLAN when available.
+- Read the MacBook's own Wi-Fi RSSI and, when exposed by macOS, its associated access-point BSSID through local Wi-Fi diagnostics.
 - Store real MacBook RSSI samples in SQLite.
 - Verify reachability of the known JioAirFiber and TP-Link management IPs using read-only ping checks.
 - Check whether HTTP/HTTPS management ports answer.
@@ -33,8 +33,8 @@ Run natively, not in Docker, because the MacBook collector uses macOS Wi-Fi inte
 ```bash
 cd ~/routerguard-ai
 git fetch origin
-git checkout feature/human-motion-detection
-git pull --ff-only origin feature/human-motion-detection
+git checkout feature/motion-analysis-v2
+git pull --ff-only origin feature/motion-analysis-v2
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
@@ -117,3 +117,8 @@ python tools/analyze_motion_trials.py path/to/exported-experiment.csv --output m
 The report compares empty-room samples with standing, walking, and object-moving labels by zone. It reports descriptive signal statistics and mean shifts only. It does not classify people versus objects, and it does not turn MacBook RSSI into Jio-to-TP-Link WDS RSSI.
 
 See [docs/MOTION_DETECTION_GUIDE.md](docs/MOTION_DETECTION_GUIDE.md) for the controlled trial protocol and interpretation limits. A unit test is provided at `tests/test_motion_analysis.py`.
+
+
+## Associated access-point identity
+
+The live collector records the MacBook's associated BSSID when macOS exposes it. This helps identify which access point the MacBook is actually connected to, but it is **not** the Jio-to-TP-Link WDS peer measurement. The BSSID is stored per sample and is migrated into existing SQLite databases without deleting historical rows. If the driver does not expose a BSSID, the field remains empty rather than being guessed.
