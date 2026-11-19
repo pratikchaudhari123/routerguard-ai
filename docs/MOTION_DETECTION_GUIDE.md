@@ -4,7 +4,7 @@
 
 - Primary router: JioAirFiber.
 - Secondary router: TP-Link TL-WR850N V3 / V3.8, WDS mode.
-- TP-Link management IP previously observed: 192.168.0.1.
+- Confirmed TP-Link TL-WR850N V3 management IP: 192.168.31.70.
 - MacBook RSSI is the MacBook-to-associated-AP link only.
 - The Jio-to-TP-Link WDS peer RSSI has not been verified as accessible.
 - The ESP32-S3 CSI receiver path is the current experimental CSI input.
