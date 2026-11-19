@@ -81,6 +81,22 @@ def router_diagnostics():
             "wds_rssi": "not_exposed_by_this_read_only_probe",
             "csi": "not_available_from_this_router_diagnostics_endpoint",
             "macbook_rssi": "separate_macbook_to_associated_ap_link",
+            "router_link_telemetry_verified": False,
+            "router_link_telemetry_source": None,
+            "calibration_eligible": False,
+            "calibration_block_reason": (
+                "Do not start the 10-minute router-link baseline until a real "
+                "JioAirFiber-to-TP-Link WDS RSSI or CSI measurement source is "
+                "verified. The TP-Link Statistics value currently observed "
+                "(-48 dBm) belongs to the MacBook wireless client, not the WDS peer."
+            ),
+            "baseline_plan": {
+                "duration_minutes": 10,
+                "required_source": "verified Jio-to-TP-Link WDS RSSI or CSI",
+                "protocol": "Keep both routers fixed and the monitored area empty and still; "
+                            "store timestamped real measurements only.",
+                "status": "blocked_waiting_for_verified_router_link_telemetry",
+            },
         },
         "safety": "Read-only ping, TCP port checks, and local ARP lookup. No login, settings changes, scans of other subnets, or firmware actions.",
     }
