@@ -2,25 +2,52 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>WiFiSense · Live signal lab</title>
 <style>
-:root{color-scheme:dark;font-family:Inter,system-ui,sans-serif;background:#08111f;color:#e6eefb}
-*{box-sizing:border-box}body{margin:0;padding:28px;max-width:1180px;margin:auto}
+:root{color-scheme:dark;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#07101d;color:#edf4ff}
+*{box-sizing:border-box}body{margin:0;padding:30px 24px 60px;max-width:1360px;margin-inline:auto;background:radial-gradient(ellipse at 12% 0%,rgba(37,99,235,.16),transparent 38%),radial-gradient(ellipse at 90% 10%,rgba(13,148,136,.10),transparent 34%),#07101d;min-height:100vh}
 header,.row{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
-h1{margin:0;font-size:30px;letter-spacing:-.04em}.sub,small,.muted{color:#91a4bd}
-.sub{margin-top:7px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin:22px 0}
-.card{background:#111e30;border:1px solid #263a55;border-radius:14px;padding:19px;margin-bottom:15px}
-.label{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#91a4bd}
-.value{font-size:27px;font-weight:700;margin-top:9px;overflow-wrap:anywhere}
-.status{padding:7px 11px;border-radius:30px;background:#263a55;font-size:12px}
-.good{color:#5ee0a0}.notice{color:#f5ce75}.warning,.error{color:#ff9c76}
-button{background:#2864dc;color:white;border:0;border-radius:8px;padding:10px 14px;cursor:pointer}
+header{padding:18px 2px 22px;border-bottom:1px solid #20324a;margin-bottom:18px}
+h1{margin:0;font-size:clamp(27px,4vw,38px);letter-spacing:-.055em}h2{font-size:19px;letter-spacing:-.025em;margin:0}h3{font-size:15px;margin:22px 0 8px}
+.sub,small,.muted{color:#91a5c0}.sub{margin-top:7px;font-size:14px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin:18px 0}
+.card{background:linear-gradient(145deg,rgba(19,34,55,.96),rgba(12,25,42,.96));border:1px solid #263d5b;border-radius:18px;padding:21px;margin-bottom:16px;box-shadow:0 12px 35px rgba(0,0,0,.16)}
+.card:hover{border-color:#36577d}.label{font-size:10px;text-transform:uppercase;letter-spacing:.13em;color:#93a9c4;font-weight:700}
+.value{font-size:clamp(23px,3vw,30px);font-weight:750;margin-top:9px;overflow-wrap:anywhere;letter-spacing:-.04em}
+.status{display:inline-flex;align-items:center;gap:7px;padding:7px 11px;border-radius:30px;background:#20344e;border:1px solid #355171;font-size:12px;font-weight:650}
+.good{color:#66e3ad}.notice{color:#f6d27e}.warning,.error{color:#ffab8b}
+button{background:linear-gradient(135deg,#3478f6,#2456c7);color:white;border:1px solid #5789ed;border-radius:10px;padding:11px 16px;cursor:pointer;font-weight:650;box-shadow:0 5px 15px rgba(24,78,190,.18);transition:transform .15s,filter .15s}
+button:hover{filter:brightness(1.12);transform:translateY(-1px)}button:disabled{opacity:.4;cursor:not-allowed;transform:none}
+input,select{font:inherit;outline:none}input:focus,select:focus{border-color:#60a5fa!important;box-shadow:0 0 0 3px rgba(59,130,246,.16)}
 canvas{width:100%;height:270px;display:block}table{width:100%;border-collapse:collapse;margin-top:12px}
-td,th{text-align:left;padding:10px;border-bottom:1px solid #263a55;font-size:13px}th{color:#91a4bd}
-.note{line-height:1.6;font-size:13px;color:#a9bad0}
-@media(max-width:600px){body{padding:16px}h1{font-size:24px}}
+td,th{text-align:left;padding:11px 10px;border-bottom:1px solid #263a55;font-size:13px}th{color:#91a5c0;font-size:11px;text-transform:uppercase;letter-spacing:.07em}
+.note{line-height:1.65;font-size:13px;color:#aebfd4}.hero-diagram{padding:18px 20px}.diagram-wrap{width:100%;overflow:hidden}.diagram-wrap svg{display:block;width:100%;min-width:560px;height:auto}.diagram-caption{display:flex;gap:12px;flex-wrap:wrap;margin-top:12px}.legend{font-size:12px;color:#aebfd4;display:flex;align-items:center;gap:7px}.dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+#chart{background:linear-gradient(180deg,rgba(22,42,67,.55),rgba(8,19,33,.2));border-radius:12px}
+#routerLinkGate{background:linear-gradient(120deg,rgba(105,55,31,.22),rgba(17,30,48,.96) 65%);border-color:#80583a!important}
+@media(max-width:650px){body{padding:15px 12px 40px}header{align-items:flex-start}h1{font-size:25px}.card{padding:16px;border-radius:15px}.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.value{font-size:22px}td,th{padding:8px 7px;font-size:12px}.hero-diagram{padding:14px}.sub{font-size:13px}}
+@media(max-width:390px){.grid{grid-template-columns:1fr}}
 </style></head><body>
 <header><div><h1>WiFiSense <span class="status">LIVE EXPERIMENT</span></h1>
 <div class="sub">Live Wi-Fi signal experiment · MacBook receiver measurements</div><p class="note"><b>Measurement scope:</b> RSSI is read at this MacBook from its currently connected access point. It is not the JioAirFiber ↔ TP-Link WDS link. Signal changes are movement candidates only, not confirmed human detection.</p></div>
 <button onclick="sampleNow()">Sample now</button></header>
+<section class="card hero-diagram">
+ <div class="row"><div><div class="label">Your experiment layout</div><h2 style="margin-top:7px">Keep the laptop outside the walking zone</h2></div><span class="status good">Setup guide</span></div>
+ <div class="diagram-wrap">
+  <svg viewBox="0 0 1000 300" role="img" aria-label="Schematic: Jio router and TP-Link router with a walking test area between them and a MacBook outside the area, still within Wi-Fi coverage.">
+   <defs><linearGradient id="walkFill" x1="0" x2="1"><stop offset="0" stop-color="#2563eb" stop-opacity=".12"/><stop offset=".5" stop-color="#38bdf8" stop-opacity=".22"/><stop offset="1" stop-color="#2563eb" stop-opacity=".12"/></linearGradient><linearGradient id="wifiLine"><stop stop-color="#60a5fa"/><stop offset="1" stop-color="#2dd4bf"/></linearGradient></defs>
+   <path d="M130 90 Q500 -35 870 90" fill="none" stroke="url(#wifiLine)" stroke-width="3" stroke-dasharray="8 9" opacity=".7"/>
+   <rect x="300" y="65" width="400" height="145" rx="20" fill="url(#walkFill)" stroke="#3b82f6" stroke-dasharray="7 7"/>
+   <text x="500" y="91" text-anchor="middle" fill="#93c5fd" font-size="15" font-weight="700">WALKING / TEST AREA</text>
+   <g transform="translate(90 110)"><rect x="0" y="0" width="100" height="66" rx="12" fill="#17365a" stroke="#60a5fa" stroke-width="2"/><path d="M18 16h64M25 28h50" stroke="#bfdbfe" stroke-width="3" stroke-linecap="round"/><circle cx="28" cy="50" r="3" fill="#5ee0a0"/><circle cx="43" cy="50" r="3" fill="#5ee0a0"/><text x="50" y="91" fill="#eaf2ff" text-anchor="middle" font-size="15" font-weight="700">JioAirFiber</text><text x="50" y="109" fill="#91a5c0" text-anchor="middle" font-size="12">Main router</text></g>
+   <g transform="translate(810 110)"><rect x="0" y="0" width="100" height="66" rx="12" fill="#173d3a" stroke="#2dd4bf" stroke-width="2"/><path d="M18 16h64M25 28h50" stroke="#99f6e4" stroke-width="3" stroke-linecap="round"/><circle cx="28" cy="50" r="3" fill="#5ee0a0"/><circle cx="43" cy="50" r="3" fill="#5ee0a0"/><text x="50" y="91" fill="#eaf2ff" text-anchor="middle" font-size="15" font-weight="700">TP-Link</text><text x="50" y="109" fill="#91a5c0" text-anchor="middle" font-size="12">WDS extender</text></g>
+   <path d="M190 145H300M700 145H810" stroke="#64748b" stroke-width="2" stroke-dasharray="5 7"/>
+   <g transform="translate(478 119)" fill="none" stroke="#e2e8f0" stroke-width="4" stroke-linecap="round"><circle cx="22" cy="12" r="9" fill="#fbbf24" stroke="none"/><path d="M22 25v32m0-22-16 15m16-15 17 13m-17 9-13 22m13-22 15 22"/></g>
+   <path d="M500 205v17" stroke="#fbbf24" stroke-width="2"/><text x="500" y="242" text-anchor="middle" fill="#fcd34d" font-size="13" font-weight="700">Walk here during trials</text>
+   <path d="M150 176Q165 230 260 248" fill="none" stroke="#60a5fa" stroke-width="2" stroke-dasharray="5 7"/>
+   <g transform="translate(220 239)"><rect x="0" y="0" width="78" height="42" rx="5" fill="#18365b" stroke="#60a5fa" stroke-width="2"/><path d="M-8 44h94l-8 6H0z" fill="#60a5fa"/><text x="39" y="25" text-anchor="middle" fill="#eaf2ff" font-size="12" font-weight="700">MacBook</text></g>
+   <text x="335" y="273" fill="#93c5fd" font-size="12">Outside test area · fixed position · stay connected to Wi-Fi</text>
+  </svg>
+ </div>
+ <div class="diagram-caption"><span class="legend"><i class="dot" style="background:#60a5fa"></i> MacBook Wi-Fi receiver</span><span class="legend"><i class="dot" style="background:#fbbf24"></i> Walking test area</span><span class="legend"><i class="dot" style="background:#2dd4bf"></i> Router / extender</span></div>
+ <p class="note">Illustrative placement guide only, not a live radar or measured radio path. MacBook RSSI is still measured from its associated access point; this diagram does not imply WDS RSSI is available.</p>
+</section>
 <div class="card" id="routerLinkGate" style="border-color:#8a5b36">
  <div class="row"><h2>Primary sensing path · JioAirFiber ↔ TP-Link</h2><span class="status warning" id="routerLinkGateStatus">Telemetry not verified</span></div>
  <p class="note"><b>Critical measurement rule:</b> We must obtain actual RSSI or CSI measured on the JioAirFiber-to-TP-Link WDS link. The TP-Link Statistics reading of <b>-48 dBm</b> currently observed is the MacBook wireless-client signal, not router-to-router RSSI. MacBook RSSI must never be substituted for the WDS measurement.</p>
