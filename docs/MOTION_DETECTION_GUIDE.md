@@ -9,6 +9,12 @@
 - The Jio-to-TP-Link WDS peer RSSI has not been verified as accessible.
 - The ESP32-S3 CSI receiver path is the current experimental CSI input.
 
+## Mandatory router-link telemetry gate
+
+The first sensing requirement is a real measurement taken on the **JioAirFiber ↔ TP-Link WDS link**. The TP-Link Statistics page's observed `-48 dBm` value is for the MacBook wireless client and is **not** the Jio-to-TP-Link RSSI. MacBook RSSI, client counters, ping reachability, and a Network Map connection must not be substituted for WDS telemetry.
+
+The dashboard therefore blocks the planned 10-minute empty-room calibration until a verifiable WDS peer RSSI or CSI source is found. After that source is verified, keep both routers fixed and the monitored area empty and still for 10 minutes, store timestamped real readings, and only then perform labelled movement and non-human disturbance trials. The baseline must never be populated with guessed or synthetic measurements.
+
 ## What the application can report
 
 1. **RSSI disturbance:** a signal-strength change at the MacBook receiver. This is not room-wide sensing.
