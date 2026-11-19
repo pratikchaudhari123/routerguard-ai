@@ -42,19 +42,18 @@ The API reports `router_link_telemetry_verified=false`, `calibration_eligible=fa
 
 ## Run on macOS
 
-Run natively, not in Docker, because the MacBook collector uses macOS Wi-Fi interfaces.
+Run natively, not in Docker, because the MacBook collector uses macOS Wi-Fi interfaces. The recommended launcher checks port 8000, uses the project virtual environment, installs requirements, and preserves the existing SQLite database:
 
 ```bash
 cd ~/routerguard-ai
-git fetch origin
-git checkout feature/motion-analysis-v2
 git pull --ff-only origin feature/motion-analysis-v2
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+chmod +x tools/run_local.sh
+./tools/run_local.sh
 ```
+
+Open http://127.0.0.1:8000. If port 8000 is already occupied, the launcher prints the listening process and exits without killing it. Identify and stop only the intended old WiFiSense process, then rerun the launcher.
+
+See [docs/LOCAL_WALKING_EXPERIMENT.md](docs/LOCAL_WALKING_EXPERIMENT.md) for the controlled crossing protocol and interpretation limits.
 
 Open the dashboard:
 
