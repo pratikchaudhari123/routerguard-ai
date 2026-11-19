@@ -24,7 +24,7 @@ This branch is configured for the current experiment:
 - Confirm that a person crossed the signal path.
 - Generate synthetic CSI, synthetic RSSI, or simulated detections.
 
-**The main technical blocker remains access to WDS-link measurements.** The TP-Link web interface documents WDS status and connected-client statistics, but the project has not verified an API or telemetry field for the upstream WDS peer's RSSI. CSI is not exposed by the currently installed TP-Link firmware through any method verified in this project. A working WDS bridge does not itself mean its RSSI/CSI is available to the application.
+**The main technical blocker remains access to WDS-link measurements.** The inspected TP-Link web interface shows the upstream wireless network and a Network Map connection, but does not expose a verified telemetry field for the upstream WDS peer's RSSI. CSI is not exposed by the currently installed TP-Link firmware through any method verified in this project. A working WDS bridge does not itself mean its RSSI/CSI is available to the application.
 
 ## Run on macOS
 
@@ -56,23 +56,23 @@ The dashboard's **Two-router hardware diagnostics** section checks these previou
 | Device | Default address |
 |---|---|
 | JioAirFiber | `192.168.31.1` |
-| TP-Link TL-WR850N | `192.168.0.1` |
+| TP-Link TL-WR850N | `192.168.31.70` |
 
 If the router LAN addresses change, set environment variables before starting the app:
 
 ```bash
 export ROUTER_JIO_IP=192.168.31.1
-export ROUTER_TPLINK_IP=192.168.0.1
+export ROUTER_TPLINK_IP=192.168.31.70
 ```
 
 The endpoint `GET /api/router-diagnostics` performs read-only ping, TCP checks on ports 80 and 443, and a local ARP-cache lookup. A router may be unreachable from the MacBook because the two devices are on different subnets or the router blocks ping. That result is not proof that WDS is down.
 
 ### Verify WDS status manually
 
-1. Open `http://192.168.0.1` while connected to the TP-Link network.
-2. Open **Advanced → Status → Wireless**.
-3. Read the **WDS Status** field.
-4. TP-Link's WDS guidance says `Run` means the bridge is established.
+1. Open `http://192.168.31.70` while connected to the TP-Link network.
+2. Open **Settings → Wireless → Connect to Network** to inspect the upstream SSID and connection configuration; do not edit or save it.
+3. Open **Network Map** and inspect the wireless connection line between Router and TL-WR850N.
+4. The inspected firmware pages do not expose a confirmed WDS peer RSSI or CSI field. A visible wireless connection indicates topology/connectivity only; it is not a radio measurement.
 5. Do not change settings during this diagnostic.
 
 The dashboard deliberately does not scrape the router's authenticated admin session, store credentials, or issue undocumented router API calls.
