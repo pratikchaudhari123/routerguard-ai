@@ -332,7 +332,10 @@ async function exportExperiment(){
  }catch(e){el('expActionHelp').textContent='Export unavailable: '+e.message;}
  finally{setExperimentBusy(false);await refreshExperiment();}
 }
+let experimentRefreshBusy=false;
 async function refreshExperiment(){
+ if(experimentRefreshBusy)return;
+ experimentRefreshBusy=true;
  try{
   const [status,summary]=await Promise.all([
    fetch('/api/experiment/status').then(r=>r.json()),
@@ -346,14 +349,17 @@ async function refreshExperiment(){
   el('expCount').textContent=total+' recorded samples';
   el('expExport').disabled=total===0||experimentActionBusy;
   el('expSessionInfo').textContent=status.session_id?'Session '+status.session_id+' · Started '+(status.started_at||'time unavailable')+(status.active?' · currently recording':' · stopped'):'No experiment session loaded.';
-  if(!status.active&&status.recovered_after_restart)el('expActionHelp').textContent='Previous session recovered after server restart. Recording was safely stopped; saved samples remain available for review and CSV export. Start a new session only when ready.';
-  else if(!status.active&&total===0)el('expActionHelp').textContent='Ready. Choose a zone and condition, then click Start recording. Nothing is being recorded into an experiment yet.';
+  if(status.active)el('expActionHelp').textContent='RECORDING NOW · Zone '+(status.zone||'Unlabelled')+' · '+(status.phase||'condition not set')+'. '+total+' samples saved so far. Click Apply zone / condition to change labels for future samples, or Stop recording to finish this session.';
+  else if(status.recovered_after_restart)el('expActionHelp').textContent='PREVIOUS SESSION RECOVERED · Recording was safely stopped after a server restart. Saved samples remain available for review and CSV export.';
+  else if(total>0)el('expActionHelp').textContent='SESSION STOPPED · '+total+' samples are saved. Export this session CSV or start a new experiment.';
+  else el('expActionHelp').textContent='READY · Choose a zone and condition, then click Start recording. Nothing is being recorded into an experiment yet.';
   const emptyByZone=Object.fromEntries(summary.groups.filter(g=>g.phase==='empty').map(g=>[g.zone,g.avg_rssi]));
   el('expRows').innerHTML=summary.groups.length?summary.groups.map(g=>{
    const baseline=emptyByZone[g.zone],shift=baseline===undefined||g.avg_rssi===null?'—':(g.avg_rssi-baseline>=0?'+':'')+(g.avg_rssi-baseline).toFixed(2)+' dB';
    return '<tr><td>'+safeText(g.zone)+'</td><td>'+safeText(g.phase)+'</td><td>'+g.samples+'</td><td>'+(g.avg_rssi??'—')+' dBm</td><td>'+(g.min_rssi??'—')+' / '+(g.max_rssi??'—')+'</td><td>'+(g.rssi_range??'—')+' dB</td><td>'+(g.avg_variation??'—')+' dB</td><td>'+shift+'</td></tr>';
   }).join(''):'<tr><td colspan="8">No samples recorded yet.</td></tr>';
  }catch(e){console.error(e);}
+ finally{experimentRefreshBusy=false;}
 }
 function safeText(value){return String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
 async function calibrateSensing(){
