@@ -58,11 +58,31 @@ See [docs/LOCAL_WALKING_EXPERIMENT.md](docs/LOCAL_WALKING_EXPERIMENT.md) for the
 Open the dashboard:
 
 - On the MacBook: http://127.0.0.1:8000
-- For a compatible ESP32 receiver on the same LAN, stop the local-only server and restart with `uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000`; configure the ESP32 with `http://MACBOOK_LAN_IP:8000/api/csi`. Allow access only on your trusted home network.
+- The supported local monitoring mode runs on the MacBook and does not require an external receiver.
 
 If the MacBook firewall asks whether Python may accept incoming connections, allow it only on the trusted home network while testing.
 
-## Real CSI receiver workflow\n\nThe dashboard includes a live CSI receiver panel. It polls the CSI and presence-candidate status endpoints, shows receiver freshness, subcarrier count, signal-change score, empty-room calibration progress, and candidate events. The receiver is considered online only if a real CSI packet arrived within the last 10 seconds.\n\n1. Start the MacBook app and identify its current LAN IPv4 address (for example `ipconfig getifaddr en0`).\n2. Confirm the ESP32-S3 and MacBook are on the same LAN; avoid guest Wi-Fi/client isolation.\n3. Run `idf.py menuconfig` in the receiver project and set the Wi-Fi SSID, password, API URL (`http://MACBOOK_LAN_IP:8000/api/csi`) and device ID under **WiFiSense receiver configuration**. Never commit Wi-Fi credentials or `sdkconfig`.\n4. Build and flash with `idf.py build` and `idf.py -p PORT flash monitor`.\n5. Wait for **CSI receiver connected**, a recent packet timestamp, and a non-zero subcarrier count.\n6. Keep the area empty and still, then start **Calibrate empty area (60 real CSI packets)**. Wait for baseline completion.\n7. Walk across the router-to-receiver path and compare repeated trials with empty-room and non-human disturbance trials.\n\nIf the receiver remains offline, check serial logs, MacBook LAN IP, macOS firewall access to port 8000, Wi-Fi credentials, and whether the AP supplies CSI on ping replies. This method is not guaranteed to work with every AP and has not yet been physically validated with your JioAirFiber. The detector requires CSI deviation to persist for at least 5 seconds before opening a presence/movement candidate, and clears the candidate after 5 seconds near baseline. This is a temporal false-spike filter, not a validated human classifier; non-human disturbances can still trigger it. The application does not automatically delete historical samples, CSI records, or movement-candidate events. Back up `data/wifisense.db` before major updates. Multi-receiver localization remains separate and requires at least two CSI receivers.\n\n## Router diagnostics
+## Existing-hardware-only operating mode (no extra devices)
+
+The supported operating mode for this project uses only:
+- JioAirFiber main router
+- TP-Link TL-WR850N V3 WDS extender
+- Existing macOS MacBook
+
+No ESP32, USB Wi-Fi adapter, external receiver, or additional sensor is required for this monitoring mode.
+
+The application can:
+1. Read MacBook RSSI when macOS exposes it. This is the MacBook-to-associated-AP link only.
+2. Check whether the Jio and TP-Link management IP addresses respond.
+3. Measure management-IP ping latency and packet loss from the MacBook.
+4. Record labelled RSSI experiments and export measured samples.
+5. Show a warning when a management endpoint becomes unreachable or path metrics degrade, provided the path-probe collector is running and its data is fresh.
+
+The application cannot use these measurements to prove that a person crossed the Jio-to-TP-Link radio path. The installed TP-Link firmware has not exposed a verified WDS peer RSSI or CSI field. Ping latency and packet loss are IP-path measurements, not radio measurements. MacBook RSSI measures a different wireless link.
+
+The CSI receiver panel is therefore replaced in the dashboard with an existing-hardware capability summary. It does not ask the user to buy or connect another device. Do not show a human/person marker from RSSI or ping data.
+
+## Router diagnostics
 
 The dashboard's **Two-router hardware diagnostics** section checks these previously observed addresses:
 
