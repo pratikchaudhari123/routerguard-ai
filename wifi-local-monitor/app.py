@@ -24,7 +24,7 @@ def get_rssi():
     p=subprocess.run(cmd,capture_output=True,text=True,timeout=6)
     if p.returncode: raise RuntimeError((p.stderr or p.stdout or "SSH failed").strip())
     if "Not connected" in p.stdout: raise RuntimeError("Wireless uplink interface is not connected")
-    m=re.search(r"signal:\\s*(-?\\d+)\\s*dBm",p.stdout,re.I)
+    m=re.search(r"signal:\s*(-?\d+)\s*dBm",p.stdout,re.I)
     if not m: raise RuntimeError("RSSI not found in `iw dev <interface> link` output")
     return int(m.group(1))
 
@@ -46,8 +46,8 @@ def monitor():
                 state["history"]=state["history"][-180:]
             new=not LOG.exists()
             with LOG.open("a",encoding="utf-8") as f:
-                if new: f.write("timestamp,rssi_dbm,status,source\\n")
-                f.write(f"{ts},{r},{status},{config['mode']}\\n")
+                if new: f.write("timestamp,rssi_dbm,status,source\n")
+                f.write(f"{ts},{r},{status},{config['mode']}\n")
         except Exception as e:
             with lock: state.update(connected=False,status="NO DATA",message=str(e),source=config["mode"])
         time.sleep(max(1,int(config["poll_seconds"])))
