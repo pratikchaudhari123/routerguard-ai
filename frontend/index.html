@@ -338,7 +338,7 @@ async function refreshExperiment(){
    fetch('/api/experiment/status').then(r=>r.json()),
    fetch('/api/experiment/summary').then(r=>r.json())
   ]);
-  el('expStatus').textContent=status.active?'Recording · '+status.zone+' · '+status.phase:'No active experiment';
+  el('expStatus').textContent=status.active?'Recording · '+status.zone+' · '+status.phase:(status.recovered_after_restart?'Recovered after restart · stopped':'No active experiment');
   el('expStart').disabled=!!status.active||experimentActionBusy;
   el('expUpdate').disabled=!status.active||experimentActionBusy;
   el('expStop').disabled=!status.active||experimentActionBusy;
@@ -346,7 +346,8 @@ async function refreshExperiment(){
   el('expCount').textContent=total+' recorded samples';
   el('expExport').disabled=total===0||experimentActionBusy;
   el('expSessionInfo').textContent=status.session_id?'Session '+status.session_id+' · Started '+(status.started_at||'time unavailable')+(status.active?' · currently recording':' · stopped'):'No experiment session loaded.';
-  if(!status.active&&total===0)el('expActionHelp').textContent='Ready. Choose a zone and condition, then click Start recording. Nothing is being recorded into an experiment yet.';
+  if(!status.active&&status.recovered_after_restart)el('expActionHelp').textContent='Previous session recovered after server restart. Recording was safely stopped; saved samples remain available for review and CSV export. Start a new session only when ready.';
+  else if(!status.active&&total===0)el('expActionHelp').textContent='Ready. Choose a zone and condition, then click Start recording. Nothing is being recorded into an experiment yet.';
   const emptyByZone=Object.fromEntries(summary.groups.filter(g=>g.phase==='empty').map(g=>[g.zone,g.avg_rssi]));
   el('expRows').innerHTML=summary.groups.length?summary.groups.map(g=>{
    const baseline=emptyByZone[g.zone],shift=baseline===undefined||g.avg_rssi===null?'—':(g.avg_rssi-baseline>=0?'+':'')+(g.avg_rssi-baseline).toFixed(2)+' dB';
