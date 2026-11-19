@@ -75,3 +75,8 @@ The MacBook cannot remotely turn an ordinary JioFiber router into a CSI receiver
 - Espressif ESP-CSI: https://github.com/espressif/esp-csi
 - Router-as-transmitter example: https://github.com/espressif/esp-csi/tree/master/examples/get-started/csi_recv_router
 - ESP-CSI guide: https://documentation.espressif.com/esp-csi/master/README.md
+
+
+## Critical distinction for a two-router WDS installation
+
+This firmware does **not** measure the JioAirFiber-to-TP-Link WDS link. It associates with one access point and filters CSI frames to that AP's BSSID. If configured to join the TP-Link SSID, it measures frames from TP-Link to the ESP32-S3; if configured to join Jio directly, it measures frames from Jio to the ESP32-S3. It cannot inspect the TP-Link's WDS receive chain or obtain the Jio-to-TP-Link RSSI from the MacBook. Do not describe these CSI packets as WDS-link CSI. For room sensing, treat the ESP32 link as its own fixed sensing path and validate it independently.
