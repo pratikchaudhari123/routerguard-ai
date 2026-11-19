@@ -70,3 +70,8 @@ uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Open http://127.0.0.1:8000.
+
+
+## Specific note for the confirmed installation
+
+The two routers are in the same room, approximately 5 metres apart, with the TP-Link connected to Jio by WDS. This physical arrangement alone does not make the WDS link observable to the MacBook. The current ESP32-S3 firmware associates with a chosen AP and captures CSI from that AP's frames; it does not capture the private Jio-to-TP-Link WDS receiver link. The MacBook BSSID field identifies the AP the MacBook itself is associated with when macOS exposes it. These are separate radio links and must remain separately labelled in data and dashboard displays.
