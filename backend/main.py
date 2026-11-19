@@ -18,7 +18,9 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from backend.router_diagnostics import router_diagnostics
 
-DB_PATH = Path("data/wifisense.db")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DB_PATH = PROJECT_ROOT / "data" / "wifisense.db"
+FRONTEND_DIR = PROJECT_ROOT / "frontend"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 INTERVAL = 2
 lock = Lock()
@@ -394,24 +396,10 @@ def take_sample():
                    None if reading["sniffer_supported"] is None else int(reading["sniffer_supported"])))
     return result
 
-async def retention_cleanup():
-    cutoff = datetime.now(timezone.utc).timestamp() - (7 * 24 * 60 * 60)
-    cutoff_iso = datetime.fromtimestamp(cutoff, timezone.utc).isoformat()
-    with sqlite3.connect(DB_PATH) as c:
-        c.execute("DELETE FROM csi_samples WHERE timestamp < ?", (cutoff_iso,))
-        c.execute("DELETE FROM human_detection_events WHERE timestamp < ?", (cutoff_iso,))
-        c.execute("DELETE FROM samples WHERE timestamp < ?", (cutoff_iso,))
-        c.commit()
-
 async def sampler_loop():
-    last_cleanup = 0.0
     while True:
         try:
             await asyncio.to_thread(take_sample)
-            now = datetime.now(timezone.utc).timestamp()
-            if now - last_cleanup >= 24 * 60 * 60:
-                await asyncio.to_thread(retention_cleanup)
-                last_cleanup = now
         except Exception as exc:
             with lock:
                 state["activity"] = f"Collector error: {exc}"
@@ -426,11 +414,11 @@ async def lifespan(app):
     task.cancel()
 
 app = FastAPI(title="WiFiSense", version="0.2.0", lifespan=lifespan)
-app.mount("/static", StaticFiles(directory="frontend"), name="static")
+app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
 @app.get("/", response_class=HTMLResponse)
 def home():
-    return Path("frontend/index.html").read_text()
+    return (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
 
 
 class CSIPacket(BaseModel):
