@@ -7,8 +7,8 @@ This procedure tests whether repeatable changes appear in the **MacBook's own Wi
 ## Fixed setup
 
 - Keep JioAirFiber at `192.168.31.1` and TP-Link at `192.168.31.70` in their normal WDS configuration.
-- Keep the MacBook stationary for the entire experiment. Prefer a safe fixed position near the middle of the router-to-router path, with its Wi-Fi connection and BSSID unchanged.
-- Keep the MacBook connected to the same access point throughout all trials. Do not move it or switch Wi-Fi networks between empty and walking phases.
+- Keep the MacBook stationary for the entire experiment, **outside the walking/sensing path and outside the space you want to monitor**, but still inside reliable Wi-Fi coverage so it stays connected to the same AP/BSSID. Do not place it between the routers or where people will walk.
+- Keep the MacBook connected to the same access point throughout all trials. Confirm it remains connected and has fresh RSSI samples; if it disconnects or roams to another AP/BSSID, pause and repeat that trial. Do not move it or switch Wi-Fi networks between empty and walking phases.
 - Do not change router channels, transmit power, WDS settings, or firmware during a test.
 - Record environmental changes such as doors, fans, other people, and heavy Wi-Fi use.
 
