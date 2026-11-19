@@ -13,6 +13,8 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from backend.router_collectors import read_both_routers
+
 DB_PATH = Path("data/wifisense.db")
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 INTERVAL = 2
@@ -22,7 +24,7 @@ state = {"connected": False, "ssid": None, "interface": None, "rssi": None,
          "tx_rate_mbps": None, "cca_percent": None, "phy_mode": None,
          "sniffer_supported": None, "timestamp": None,
          "variation_db": None, "activity": "Waiting for signal samples",
-         "activity_level": "neutral", "source": None, "history": []}
+         "activity_level": "neutral", "source": None, "history": [], "routers": []}
 samples = deque(maxlen=90)
 
 def run_cmd(args, timeout=4):
@@ -140,6 +142,10 @@ def init_db():
         for column, kind in migrations.items():
             if column not in existing:
                 c.execute(f"ALTER TABLE samples ADD COLUMN {column} {kind}")
+        c.execute("""CREATE TABLE IF NOT EXISTS router_rssi_samples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, checked_at TEXT NOT NULL,
+            router_id TEXT NOT NULL, router_name TEXT NOT NULL,
+            rssi REAL, status TEXT NOT NULL, source TEXT, message TEXT)""")
 
 def take_sample():
     reading = read_wifi()
@@ -181,6 +187,16 @@ async def sampler_loop():
     while True:
         try:
             await asyncio.to_thread(take_sample)
+            router_readings = await read_both_routers()
+            with lock:
+                state["routers"] = router_readings
+            with sqlite3.connect(DB_PATH) as c:
+                c.executemany("""INSERT INTO router_rssi_samples
+                    (checked_at,router_id,router_name,rssi,status,source,message)
+                    VALUES(?,?,?,?,?,?,?)""", [
+                    (r["checked_at"], r["router_id"], r["router_name"], r["rssi"],
+                     r["status"], r["source"], r["message"]) for r in router_readings
+                ])
         except Exception as exc:
             with lock:
                 state["activity"] = f"Collector error: {exc}"
@@ -216,6 +232,23 @@ def history(limit: int = 120):
     with sqlite3.connect(DB_PATH) as c:
         c.row_factory = sqlite3.Row
         rows = c.execute("SELECT * FROM samples ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    return [dict(r) for r in reversed(rows)]
+
+@app.get("/api/routers/status")
+def routers_status():
+    with lock:
+        return {"routers": list(state.get("routers", [])),
+                "simultaneous_polling": True,
+                "note": "A router reports RSSI only when a supported endpoint is configured."}
+
+@app.get("/api/routers/history")
+def routers_history(limit: int = 120):
+    limit = max(1, min(limit, 1000))
+    with sqlite3.connect(DB_PATH) as c:
+        c.row_factory = sqlite3.Row
+        rows = c.execute(
+            "SELECT * FROM router_rssi_samples ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
     return [dict(r) for r in reversed(rows)]
 
 @app.post("/api/sample")
