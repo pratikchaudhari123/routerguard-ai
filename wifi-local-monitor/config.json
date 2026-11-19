@@ -1,0 +1,16 @@
+{
+  "mode": "demo",
+  "router_host": "192.168.1.2",
+  "ssh_user": "root",
+  "wifi_interface": "wlan-sta",
+  "poll_seconds": 1,
+  "drop_threshold_db": 8,
+  "ssh_options": [
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=3",
+    "-o",
+    "StrictHostKeyChecking=accept-new"
+  ]
+}
