@@ -26,6 +26,20 @@ This branch is configured for the current experiment:
 
 **The main technical blocker remains access to WDS-link measurements.** The inspected TP-Link web interface shows the upstream wireless network and a Network Map connection, but does not expose a verified telemetry field for the upstream WDS peer's RSSI. CSI is not exposed by the currently installed TP-Link firmware through any method verified in this project. A working WDS bridge does not itself mean its RSSI/CSI is available to the application.
 
+## Mandatory router-link measurement gate and 10-minute baseline
+
+The dashboard now displays a hard measurement gate for the primary JioAirFiber-to-TP-Link sensing path.
+
+**Required before any router-link calibration:** obtain a real, directly measured Jio-to-TP-Link WDS peer RSSI or CSI value from a verified router/driver telemetry source. The TP-Link Statistics value observed as `-48 dBm` is the MacBook wireless-client link, not the WDS peer RSSI. Never relabel MacBook RSSI, client signal strength, router reachability, packet counts, or a Network Map connection as router-to-router telemetry.
+
+The 10-minute empty-room baseline is intentionally marked **BLOCKED** until that source is verified. Once verified:
+1. Keep JioAirFiber and TP-Link fixed in their installed positions.
+2. Keep the monitored area empty and still for 10 minutes.
+3. Store timestamped readings from the verified router-link telemetry source only.
+4. Then run repeated labelled person-crossing and non-human disturbance trials and compare them with the empty-room baseline.
+
+The API reports `router_link_telemetry_verified=false`, `calibration_eligible=false`, and the reason while no source has been verified. This is a validation gate, not a claim that the routers currently expose the needed measurement.
+
 ## Run on macOS
 
 Run natively, not in Docker, because the MacBook collector uses macOS Wi-Fi interfaces.
