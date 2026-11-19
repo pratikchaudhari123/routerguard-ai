@@ -16,7 +16,8 @@ from threading import RLock
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-DB_PATH = Path("data/wifisense.db")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DB_PATH = PROJECT_ROOT / "data" / "wifisense.db"
 router = APIRouter(prefix="/api/localization", tags=["localization"])
 guard = RLock()
 baselines = defaultdict(lambda: deque(maxlen=120))
